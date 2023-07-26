@@ -9,6 +9,9 @@
     <a href="https://pkg.go.dev/github.com/gdgvda/cron">
         <img src="https://pkg.go.dev/badge/github.com/gdgvda/cron.svg" alt="Go Reference">
     </a>
+    <a href="https://codecov.io/gh/gdgvda/cron"> 
+        <img src="https://codecov.io/gh/gdgvda/cron/branch/master/graph/badge.svg"/ alt="Codecov badge"> 
+    </a>
 </p>
 
 This repository is an independent fork of the https://github.com/robfig/cron project,
