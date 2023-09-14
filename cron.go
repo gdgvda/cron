@@ -22,7 +22,7 @@ type Cron struct {
 	runningMu sync.Mutex
 	location  *time.Location
 	parser    ScheduleParser
-	nextID    ID
+	next    ID
 	jobWaiter sync.WaitGroup
 }
 
@@ -158,9 +158,9 @@ func (c *Cron) AddJob(spec string, cmd Job) (ID, error) {
 func (c *Cron) Schedule(schedule Schedule, cmd Job) ID {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
-	c.nextID++
+	c.next++
 	entry := &Entry{
-		ID:         c.nextID,
+		ID:         c.next,
 		Schedule:   schedule,
 		WrappedJob: c.chain.Then(cmd),
 		Job:        cmd,
