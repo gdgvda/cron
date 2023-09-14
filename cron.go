@@ -15,14 +15,14 @@ type Cron struct {
 	chain     Chain
 	stop      chan struct{}
 	add       chan *Entry
-	remove    chan EntryID
+	remove    chan ID
 	snapshot  chan chan []Entry
 	running   bool
 	logger    Logger
 	runningMu sync.Mutex
 	location  *time.Location
 	parser    ScheduleParser
-	nextID    EntryID
+	nextID    ID
 	jobWaiter sync.WaitGroup
 }
 
@@ -43,14 +43,14 @@ type Schedule interface {
 	Next(time.Time) time.Time
 }
 
-// EntryID identifies an entry within a Cron instance
-type EntryID int
+// ID identifies an entry within a Cron instance
+type ID int
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
 	// ID is the cron-assigned ID of this entry, which may be used to look up a
 	// snapshot or remove it.
-	ID EntryID
+	ID ID
 
 	// Schedule on which this job should be run.
 	Schedule Schedule
@@ -117,7 +117,7 @@ func New(opts ...Option) *Cron {
 		add:       make(chan *Entry),
 		stop:      make(chan struct{}),
 		snapshot:  make(chan chan []Entry),
-		remove:    make(chan EntryID),
+		remove:    make(chan ID),
 		running:   false,
 		runningMu: sync.Mutex{},
 		logger:    DefaultLogger,
@@ -138,14 +138,14 @@ func (f FuncJob) Run() { f() }
 // AddFunc adds a func to the Cron to be run on the given schedule.
 // The spec is parsed using the time zone of this Cron instance as the default.
 // An opaque ID is returned that can be used to later remove it.
-func (c *Cron) AddFunc(spec string, cmd func()) (EntryID, error) {
+func (c *Cron) AddFunc(spec string, cmd func()) (ID, error) {
 	return c.AddJob(spec, FuncJob(cmd))
 }
 
 // AddJob adds a Job to the Cron to be run on the given schedule.
 // The spec is parsed using the time zone of this Cron instance as the default.
 // An opaque ID is returned that can be used to later remove it.
-func (c *Cron) AddJob(spec string, cmd Job) (EntryID, error) {
+func (c *Cron) AddJob(spec string, cmd Job) (ID, error) {
 	schedule, err := c.parser.Parse(spec)
 	if err != nil {
 		return 0, err
@@ -155,7 +155,7 @@ func (c *Cron) AddJob(spec string, cmd Job) (EntryID, error) {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 // The job is wrapped with the configured Chain.
-func (c *Cron) Schedule(schedule Schedule, cmd Job) EntryID {
+func (c *Cron) Schedule(schedule Schedule, cmd Job) ID {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
 	c.nextID++
@@ -191,7 +191,7 @@ func (c *Cron) Location() *time.Location {
 }
 
 // Entry returns a snapshot of the given entry, or nil if it couldn't be found.
-func (c *Cron) Entry(id EntryID) Entry {
+func (c *Cron) Entry(id ID) Entry {
 	for _, entry := range c.Entries() {
 		if id == entry.ID {
 			return entry
@@ -201,7 +201,7 @@ func (c *Cron) Entry(id EntryID) Entry {
 }
 
 // Remove an entry from being run in the future.
-func (c *Cron) Remove(id EntryID) {
+func (c *Cron) Remove(id ID) {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
 	if c.running {
@@ -344,7 +344,7 @@ func (c *Cron) entrySnapshot() []Entry {
 	return entries
 }
 
-func (c *Cron) removeEntry(id EntryID) {
+func (c *Cron) removeEntry(id ID) {
 	var entries []*Entry
 	for _, e := range c.entries {
 		if e.ID != id {
