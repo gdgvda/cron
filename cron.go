@@ -123,6 +123,7 @@ func New(opts ...Option) *Cron {
 		logger:    DefaultLogger,
 		location:  time.Local,
 		parser:    standardParser,
+		next: 1,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -158,13 +159,13 @@ func (c *Cron) AddJob(spec string, cmd Job) (ID, error) {
 func (c *Cron) Schedule(schedule Schedule, cmd Job) ID {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
-	c.next++
 	entry := &Entry{
 		ID:         c.next,
 		Schedule:   schedule,
 		WrappedJob: c.chain.Then(cmd),
 		Job:        cmd,
 	}
+	c.next++
 	if !c.running {
 		c.entries = append(c.entries, entry)
 	} else {
