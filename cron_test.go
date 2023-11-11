@@ -785,6 +785,20 @@ func TestMultiThreadedStartAndStop(t *testing.T) {
 	cron.Stop()
 }
 
+func TestRunningOutOfIDs(t *testing.T) {
+	cron := New()
+	cron.next = ID(^uint(0))
+
+	_, err := cron.Add("* * * * *", func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Add("* * * * *", func() {})
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
 func wait(wg *sync.WaitGroup) chan bool {
 	ch := make(chan bool)
 	go func() {
