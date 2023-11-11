@@ -3,21 +3,21 @@ Package cron implements a cron spec parser and job runner.
 
 Usage
 
-Callers may register Funcs to be invoked on a given schedule.  Cron will run
+Callers may register funcs to be invoked on a given schedule. Cron will run
 them in their own goroutines.
 
 	c := cron.New()
-	c.AddFunc("30 * * * *", func() { fmt.Println("Every hour on the half hour") })
-	c.AddFunc("30 3-6,20-23 * * *", func() { fmt.Println(".. in the range 3-6am, 8-11pm") })
-	c.AddFunc("CRON_TZ=Asia/Tokyo 30 04 * * *", func() { fmt.Println("Runs at 04:30 Tokyo time every day") })
-	c.AddFunc("@hourly",      func() { fmt.Println("Every hour, starting an hour from now") })
-	c.AddFunc("@every 1h30m", func() { fmt.Println("Every hour thirty, starting an hour thirty from now") })
+	c.Add("30 * * * *", func() { fmt.Println("Every hour on the half hour") })
+	c.Add("30 3-6,20-23 * * *", func() { fmt.Println(".. in the range 3-6am, 8-11pm") })
+	c.Add("CRON_TZ=Asia/Tokyo 30 04 * * *", func() { fmt.Println("Runs at 04:30 Tokyo time every day") })
+	c.Add("@hourly",      func() { fmt.Println("Every hour, starting an hour from now") })
+	c.Add("@every 1h30m", func() { fmt.Println("Every hour thirty, starting an hour thirty from now") })
 	c.Start()
 	..
 	// Funcs are invoked in their own goroutine, asynchronously.
 	...
 	// Funcs may also be added to a running Cron
-	c.AddFunc("@daily", func() { fmt.Println("Every day") })
+	c.Add("@daily", func() { fmt.Println("Every day") })
 	..
 	// Inspect the cron job entries' next and previous run times.
 	inspect(c.Entries())
@@ -127,8 +127,8 @@ Time zones
 By default, all interpretation and scheduling is done in the machine's local
 time zone (time.Local). You can specify a different time zone on construction:
 
-      cron.New(
-          cron.WithLocation(time.UTC))
+	cron.New(
+		cron.WithLocation(time.UTC))
 
 Individual cron schedules may also override the time zone they are to be
 interpreted in by providing an additional space-separated field at the beginning
@@ -137,20 +137,20 @@ of the cron spec, of the form "CRON_TZ=Asia/Tokyo".
 For example:
 
 	# Runs at 6am in time.Local
-	cron.New().AddFunc("0 6 * * ?", ...)
+	cron.New().Add("0 6 * * ?", ...)
 
 	# Runs at 6am in America/New_York
 	nyc, _ := time.LoadLocation("America/New_York")
 	c := cron.New(cron.WithLocation(nyc))
-	c.AddFunc("0 6 * * ?", ...)
+	c.Add("0 6 * * ?", ...)
 
 	# Runs at 6am in Asia/Tokyo
-	cron.New().AddFunc("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
+	cron.New().Add("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
 
 	# Runs at 6am in Asia/Tokyo
 	c := cron.New(cron.WithLocation(nyc))
 	c.SetLocation("America/New_York")
-	c.AddFunc("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
+	c.Add("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
 
 The prefix "TZ=(TIME ZONE)" is also supported for legacy compatibility.
 
@@ -203,7 +203,6 @@ Activate it with a one-off logger as follows:
 	cron.New(
 		cron.WithLogger(
 			cron.VerbosePrintfLogger(log.New(os.Stdout, "cron: ", log.LstdFlags))))
-
 
 Implementation
 

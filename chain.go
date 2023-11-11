@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// JobWrapper decorates the given Job with some behavior.
-type JobWrapper func(Job) Job
+// JobWrapper decorates the given job with some behavior.
+type JobWrapper func(func()) func()
 
 // Chain is a sequence of JobWrappers that decorates submitted jobs with
 // cross-cutting behaviors like logging or synchronization.
@@ -24,20 +24,23 @@ func NewChain(c ...JobWrapper) Chain {
 // Then decorates the given job with all JobWrappers in the chain.
 //
 // This:
-//     NewChain(m1, m2, m3).Then(job)
+//
+//	NewChain(m1, m2, m3).Then(job)
+//
 // is equivalent to:
-//     m1(m2(m3(job)))
-func (c Chain) Then(j Job) Job {
+//
+//	m1(m2(m3(job)))
+func (c Chain) Then(job func()) func() {
 	for i := range c.wrappers {
-		j = c.wrappers[len(c.wrappers)-i-1](j)
+		job = c.wrappers[len(c.wrappers)-i-1](job)
 	}
-	return j
+	return job
 }
 
 // Recover panics in wrapped jobs and log them with the provided logger.
 func Recover(logger Logger) JobWrapper {
-	return func(j Job) Job {
-		return FuncJob(func() {
+	return func(job func()) func() {
+		return func() {
 			defer func() {
 				if r := recover(); r != nil {
 					const size = 64 << 10
@@ -50,8 +53,8 @@ func Recover(logger Logger) JobWrapper {
 					logger.Error(err, "panic", "stack", "...\n"+string(buf))
 				}
 			}()
-			j.Run()
-		})
+			job()
+		}
 	}
 }
 
@@ -59,34 +62,34 @@ func Recover(logger Logger) JobWrapper {
 // previous one is complete. Jobs running after a delay of more than a minute
 // have the delay logged at Info.
 func DelayIfStillRunning(logger Logger) JobWrapper {
-	return func(j Job) Job {
+	return func(job func()) func() {
 		var mu sync.Mutex
-		return FuncJob(func() {
+		return func() {
 			start := time.Now()
 			mu.Lock()
 			defer mu.Unlock()
 			if dur := time.Since(start); dur > time.Minute {
 				logger.Info("delay", "duration", dur)
 			}
-			j.Run()
-		})
+			job()
+		}
 	}
 }
 
-// SkipIfStillRunning skips an invocation of the Job if a previous invocation is
+// SkipIfStillRunning skips an invocation of the job if a previous invocation is
 // still running. It logs skips to the given logger at Info level.
 func SkipIfStillRunning(logger Logger) JobWrapper {
-	return func(j Job) Job {
+	return func(job func()) func() {
 		var ch = make(chan struct{}, 1)
 		ch <- struct{}{}
-		return FuncJob(func() {
+		return func() {
 			select {
 			case v := <-ch:
 				defer func() { ch <- v }()
-				j.Run()
+				job()
 			default:
 				logger.Info("skip")
 			}
-		})
+		}
 	}
 }
