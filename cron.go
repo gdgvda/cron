@@ -39,7 +39,7 @@ type Schedule interface {
 }
 
 // ID identifies an entry within a Cron instance
-type ID int
+type ID uint
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
