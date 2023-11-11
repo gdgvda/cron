@@ -318,9 +318,18 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	cron.Schedule(Every(time.Minute), func() {})
-	cron.Schedule(Every(time.Second), func() { wg.Done() })
-	cron.Schedule(Every(time.Hour), func() {})
+	_, err = cron.Schedule(Every(time.Minute), func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(Every(time.Second), func() { wg.Done() })
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(Every(time.Hour), func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
 
 	cron.Start()
 	defer cron.Stop()
@@ -508,8 +517,14 @@ func TestJob(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job4 := cron.Schedule(Every(5*time.Second+5*time.Nanosecond), newTestJob(wg, "job4").job())
-	job5 := cron.Schedule(Every(5*time.Minute), newTestJob(wg, "job5").job())
+	job4, err := cron.Schedule(Every(5*time.Second+5*time.Nanosecond), newTestJob(wg, "job4").job())
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	job5, err := cron.Schedule(Every(5*time.Minute), newTestJob(wg, "job5").job())
+	if err != nil {
+		t.Error("non-nil error")
+	}
 
 	cron.Start()
 	defer cron.Stop()
@@ -551,8 +566,11 @@ func TestScheduleAfterRemoval(t *testing.T) {
 	var mu sync.Mutex
 
 	cron := newWithSeconds()
-	hourJob := cron.Schedule(Every(time.Hour), func() {})
-	cron.Schedule(Every(time.Second), func() {
+	hourJob, err := cron.Schedule(Every(time.Hour), func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(Every(time.Second), func() {
 		mu.Lock()
 		defer mu.Unlock()
 		switch calls {
@@ -570,6 +588,9 @@ func TestScheduleAfterRemoval(t *testing.T) {
 			panic("unexpected 3rd call")
 		}
 	})
+	if err != nil {
+		t.Error("non-nil error")
+	}
 
 	cron.Start()
 	defer cron.Stop()
@@ -599,7 +620,10 @@ func TestJobWithZeroTimeDoesNotRun(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	cron.Schedule(new(ZeroSchedule), func() { t.Error("expected zero task will not run") })
+	_, err = cron.Schedule(new(ZeroSchedule), func() { t.Error("expected zero task will not run") })
+	if err != nil {
+		t.Error("non-nil error")
+	}
 	cron.Start()
 	defer cron.Stop()
 	<-time.After(OneSecond)

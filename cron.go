@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"fmt"
 )
 
 // Cron keeps track of any number of entries, invoking the associated func as
@@ -59,9 +60,6 @@ type Entry struct {
 
 	job func()
 }
-
-// Valid returns true if this is not the zero entry.
-func (e Entry) Valid() bool { return e.ID != 0 }
 
 // byTime is a wrapper for sorting the entry array by time
 // (with zero time at the end).
@@ -128,14 +126,19 @@ func (c *Cron) Add(spec string, cmd func()) (ID, error) {
 	if err != nil {
 		return 0, err
 	}
-	return c.Schedule(schedule, cmd), nil
+	return c.Schedule(schedule, cmd)
 }
 
 // Schedule adds a job to the Cron to be run on the given schedule.
 // The job is wrapped with the configured Chain.
-func (c *Cron) Schedule(schedule Schedule, cmd func()) ID {
+func (c *Cron) Schedule(schedule Schedule, cmd func()) (ID, error) {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
+	
+	if c.next == 0 {
+		return 0, fmt.Errorf("run out of available ids")
+	}
+
 	entry := &Entry{
 		ID:         c.next,
 		Schedule:   schedule,
@@ -147,7 +150,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd func()) ID {
 	} else {
 		c.add <- entry
 	}
-	return entry.ID
+	return entry.ID, nil
 }
 
 // Entries returns a snapshot of the cron entries.
