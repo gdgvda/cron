@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"container/heap"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -528,7 +529,7 @@ func TestJob(t *testing.T) {
 
 	cron.Start()
 	defer cron.Stop()
-
+	
 	select {
 	case <-time.After(OneSecond):
 		t.FailNow()
@@ -536,10 +537,11 @@ func TestJob(t *testing.T) {
 	}
 
 	// Ensure the entries are in the right order.
+	cron.Stop()
 	expecteds := []ID{job2, job4, job5, job1, job3, job0}
-
-	var actuals []ID
-	for _, entry := range cron.Entries() {
+	actuals := []ID{}
+	for len(cron.entries) > 0 {
+		entry := heap.Pop(&cron.entries).(*Entry)
 		actuals = append(actuals, entry.ID)
 	}
 
