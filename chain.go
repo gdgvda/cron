@@ -2,6 +2,7 @@ package cron
 
 import (
 	"fmt"
+	"log/slog"
 	"runtime"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ func (c Chain) Then(job func()) func() {
 }
 
 // Recover panics in wrapped jobs and log them with the provided logger.
-func Recover(logger Logger) JobWrapper {
+func Recover(logger *slog.Logger) JobWrapper {
 	return func(job func()) func() {
 		return func() {
 			defer func() {
@@ -50,7 +51,7 @@ func Recover(logger Logger) JobWrapper {
 					if !ok {
 						err = fmt.Errorf("%v", r)
 					}
-					logger.Error(err, "panic", "stack", "...\n"+string(buf))
+					logger.Error(err.Error(), "event", "panic", "stack", "...\n"+string(buf))
 				}
 			}()
 			job()
@@ -61,7 +62,7 @@ func Recover(logger Logger) JobWrapper {
 // DelayIfStillRunning serializes jobs, delaying subsequent runs until the
 // previous one is complete. Jobs running after a delay of more than a minute
 // have the delay logged at Info.
-func DelayIfStillRunning(logger Logger) JobWrapper {
+func DelayIfStillRunning(logger *slog.Logger) JobWrapper {
 	return func(job func()) func() {
 		var mu sync.Mutex
 		return func() {
@@ -69,7 +70,7 @@ func DelayIfStillRunning(logger Logger) JobWrapper {
 			mu.Lock()
 			defer mu.Unlock()
 			if dur := time.Since(start); dur > time.Minute {
-				logger.Info("delay", "duration", dur)
+				logger.Info("job execution delayed", "event", "delay", "duration", dur)
 			}
 			job()
 		}
@@ -78,7 +79,7 @@ func DelayIfStillRunning(logger Logger) JobWrapper {
 
 // SkipIfStillRunning skips an invocation of the job if a previous invocation is
 // still running. It logs skips to the given logger at Info level.
-func SkipIfStillRunning(logger Logger) JobWrapper {
+func SkipIfStillRunning(logger *slog.Logger) JobWrapper {
 	return func(job func()) func() {
 		var ch = make(chan struct{}, 1)
 		ch <- struct{}{}
@@ -88,7 +89,7 @@ func SkipIfStillRunning(logger Logger) JobWrapper {
 				defer func() { ch <- v }()
 				job()
 			default:
-				logger.Info("skip")
+				logger.Info("job execution skipped", "event", "skip")
 			}
 		}
 	}

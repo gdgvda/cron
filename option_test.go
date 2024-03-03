@@ -1,7 +1,7 @@
 package cron
 
 import (
-	"log"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -24,9 +24,9 @@ func TestWithParser(t *testing.T) {
 
 func TestWithVerboseLogger(t *testing.T) {
 	var buf syncWriter
-	var logger = log.New(&buf, "", log.LstdFlags)
-	c := New(WithLogger(VerbosePrintfLogger(logger)))
-	if c.logger.(printfLogger).logger != logger {
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	c := New(WithLogger(logger))
+	if c.logger != logger {
 		t.Error("expected provided logger")
 	}
 
@@ -38,8 +38,8 @@ func TestWithVerboseLogger(t *testing.T) {
 	time.Sleep(OneSecond)
 	c.Stop()
 	out := buf.String()
-	if !strings.Contains(out, "schedule,") ||
-		!strings.Contains(out, "run,") {
+	if !strings.Contains(out, "start") ||
+		!strings.Contains(out, "run") {
 		t.Error("expected to see some actions, got:", out)
 	}
 }

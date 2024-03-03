@@ -2,14 +2,14 @@ package cron
 
 import (
 	"bytes"
+	"container/heap"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-	"container/heap"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -35,8 +35,8 @@ func (sw *syncWriter) String() string {
 	return sw.wr.String()
 }
 
-func newBufLogger(sw *syncWriter) Logger {
-	return PrintfLogger(log.New(sw, "", log.LstdFlags))
+func newBufLogger(sw *syncWriter) *slog.Logger {
+	return slog.New(slog.NewTextHandler(sw, nil))
 }
 
 func TestFuncPanicRecovery(t *testing.T) {
@@ -529,7 +529,7 @@ func TestJob(t *testing.T) {
 
 	cron.Start()
 	defer cron.Stop()
-	
+
 	select {
 	case <-time.After(OneSecond):
 		t.FailNow()
