@@ -122,6 +122,8 @@ func TestParseScheduleErrors(t *testing.T) {
 	var tests = []struct{ expr, err string }{
 		{"* 5 j * * *", "failed to parse int from"},
 		{"@every Xm", "failed to parse duration"},
+		{"@every 1ns", "delay must be at least one second"},
+		{"@every 1h1ms", "delay must be a multiple of one second"},
 		{"@unrecognized", "unrecognized descriptor"},
 		{"* * * *", "expected 5 to 6 fields"},
 		{"", "empty spec string"},
@@ -149,7 +151,7 @@ func TestParseSchedule(t *testing.T) {
 		{secondParser, "CRON_TZ=UTC  0 5 * * * *", every5min(time.UTC)},
 		{standardParser, "CRON_TZ=UTC  5 * * * *", every5min(time.UTC)},
 		{secondParser, "CRON_TZ=Asia/Tokyo 0 5 * * * *", every5min(tokyo)},
-		{secondParser, "@every 5m", ConstantDelaySchedule{5 * time.Minute}},
+		{secondParser, "@every 5m", constantDelaySchedule{5 * time.Minute}},
 		{secondParser, "@midnight", midnight(time.Local)},
 		{secondParser, "TZ=UTC  @midnight", midnight(time.UTC)},
 		{secondParser, "TZ=Asia/Tokyo @midnight", midnight(tokyo)},
@@ -324,7 +326,7 @@ func TestStandardSpecSchedule(t *testing.T) {
 		},
 		{
 			expr:     "@every 5m",
-			expected: ConstantDelaySchedule{time.Duration(5) * time.Minute},
+			expected: constantDelaySchedule{time.Duration(5) * time.Minute},
 		},
 		{
 			expr: "5 j * * *",

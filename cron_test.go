@@ -319,15 +319,15 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Schedule(Every(time.Minute), func() {})
+	_, err = cron.Schedule(must(every(time.Minute)), func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Schedule(Every(time.Second), func() { wg.Done() })
+	_, err = cron.Schedule(must(every(time.Second)), func() { wg.Done() })
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Schedule(Every(time.Hour), func() {})
+	_, err = cron.Schedule(must(every(time.Hour)), func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -518,11 +518,11 @@ func TestJob(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job4, err := cron.Schedule(Every(5*time.Second+5*time.Nanosecond), newTestJob(wg, "job4").job())
+	job4, err := cron.Add("@every 5s", newTestJob(wg, "job4").job())
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job5, err := cron.Schedule(Every(5*time.Minute), newTestJob(wg, "job5").job())
+	job5, err := cron.Schedule(must(every(5*time.Minute)), newTestJob(wg, "job5").job())
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -568,11 +568,11 @@ func TestScheduleAfterRemoval(t *testing.T) {
 	var mu sync.Mutex
 
 	cron := newWithSeconds()
-	hourJob, err := cron.Schedule(Every(time.Hour), func() {})
+	hourJob, err := cron.Schedule(must(every(time.Hour)), func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Schedule(Every(time.Second), func() {
+	_, err = cron.Schedule(must(every(time.Second)), func() {
 		mu.Lock()
 		defer mu.Unlock()
 		switch calls {
@@ -822,4 +822,11 @@ func stop(cron *Cron) chan bool {
 // newWithSeconds returns a Cron with the seconds field enabled.
 func newWithSeconds() *Cron {
 	return New(WithParser(secondParser), WithChain())
+}
+
+func must[T any](val T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return val
 }
