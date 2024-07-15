@@ -12,7 +12,7 @@ func TestConstantDelayNext(t *testing.T) {
 		expected string
 	}{
 		// Simple cases
-		{"Mon Jul 9 14:45 2012", 15*time.Minute + 50*time.Nanosecond, "Mon Jul 9 15:00 2012"},
+		{"Mon Jul 9 14:45 2012", 15 * time.Minute, "Mon Jul 9 15:00 2012"},
 		{"Mon Jul 9 14:59 2012", 15 * time.Minute, "Mon Jul 9 15:14 2012"},
 		{"Mon Jul 9 14:59:59 2012", 15 * time.Minute, "Mon Jul 9 15:14:59 2012"},
 
@@ -31,24 +31,47 @@ func TestConstantDelayNext(t *testing.T) {
 		// Wrap around minute, hour, day, month, and year
 		{"Mon Dec 31 23:59:45 2012", 15 * time.Second, "Tue Jan 1 00:00:00 2013"},
 
-		// Round to nearest second on the delay
-		{"Mon Jul 9 14:45 2012", 15*time.Minute + 50*time.Nanosecond, "Mon Jul 9 15:00 2012"},
-
-		// Round up to 1 second if the duration is less.
-		{"Mon Jul 9 14:45:00 2012", 15 * time.Millisecond, "Mon Jul 9 14:45:01 2012"},
-
 		// Round to nearest second when calculating the next time.
 		{"Mon Jul 9 14:45:00.005 2012", 15 * time.Minute, "Mon Jul 9 15:00 2012"},
-
-		// Round to nearest second for both.
-		{"Mon Jul 9 14:45:00.005 2012", 15*time.Minute + 50*time.Nanosecond, "Mon Jul 9 15:00 2012"},
 	}
 
 	for _, c := range tests {
-		actual := Every(c.delay).Next(getTime(c.time))
+		every, err := every(c.delay)
+		if err != nil {
+			t.Errorf("every(%s) returned error: %v", c.delay, err)
+		}
+		actual := every.Next(getTime(c.time))
 		expected := getTime(c.expected)
 		if actual != expected {
 			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.delay, expected, actual)
+		}
+	}
+}
+
+func TestConstantDelayErrors(t *testing.T) {
+	tests := []struct {
+		delay time.Duration
+		error bool
+	}{
+		{0, true},
+		{time.Nanosecond, true},
+		{time.Microsecond, true},
+		{time.Millisecond, true},
+		{time.Second, false},
+		{time.Minute, false},
+		{time.Hour, false},
+		{24 * time.Hour, false},
+		{7 * 24 * time.Hour, false},
+		{30 * 24 * time.Hour, false},
+		{365 * 24 * time.Hour, false},
+	}
+
+	for _, c := range tests {
+		_, err := every(c.delay)
+		if err != nil && !c.error {
+			t.Errorf("every(%s) returned error: %v", c.delay, err)
+		} else if err == nil && c.error {
+			t.Errorf("every(%s) did not return error", c.delay)
 		}
 	}
 }
