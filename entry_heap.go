@@ -2,8 +2,8 @@ package cron
 
 type entryHeap []*Entry
 
-func (h entryHeap) Len() int           { return len(h) }
-func (h entryHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h entryHeap) Len() int      { return len(h) }
+func (h entryHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h entryHeap) Less(i, j int) bool {
 	// Two zero times should return false.
 	// Otherwise, zero is "greater" than any other time.
