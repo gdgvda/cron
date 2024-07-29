@@ -113,7 +113,7 @@ or cron is run. This is supported by formatting the cron spec like this:
 	@every <duration>
 
 where "duration" is a string accepted by time.ParseDuration
-(http://golang.org/pkg/time/#ParseDuration).
+(http://golang.org/pkg/time/#ParseDuration), multiple of one second.
 
 For example, "@every 1h30m10s" would indicate a schedule that activates after
 1 hour, 30 minutes, 10 seconds, and then every interval after that.
