@@ -1,7 +1,7 @@
 /*
 Package cron implements a cron spec parser and job runner.
 
-Usage
+# Usage
 
 Callers may register funcs to be invoked on a given schedule. Cron will run
 them in their own goroutines.
@@ -24,7 +24,7 @@ them in their own goroutines.
 	..
 	c.Stop()  // Stop the scheduler (does not stop any jobs already running).
 
-CRON Expression Format
+# CRON Expression Format
 
 A cron expression represents a set of times, using 5 space-separated fields.
 
@@ -42,7 +42,7 @@ Month and Day-of-week field values are case insensitive.  "SUN", "Sun", and
 The specific interpretation of the format is based on the Cron Wikipedia page:
 https://en.wikipedia.org/wiki/Cron
 
-Alternative Formats
+# Alternative Formats
 
 Alternative Cron expression formats support other fields like seconds. You can
 implement that by creating a custom Parser as follows.
@@ -61,7 +61,7 @@ parser you saw earlier, except that its seconds field is REQUIRED:
 That emulates Quartz, the most popular alternative Cron schedule format:
 http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html
 
-Special Characters
+# Special Characters
 
 Asterisk ( * )
 
@@ -93,7 +93,7 @@ Question mark ( ? )
 Question mark may be used instead of '*' for leaving either day-of-month or
 day-of-week blank.
 
-Predefined schedules
+# Predefined schedules
 
 You may use one of several pre-defined schedules in place of a cron expression.
 
@@ -105,12 +105,12 @@ You may use one of several pre-defined schedules in place of a cron expression.
 	@daily (or @midnight)  | Run once a day, midnight                   | 0 0 * * *
 	@hourly                | Run once an hour, beginning of hour        | 0 * * * *
 
-Intervals
+# Intervals
 
 You may also schedule a job to execute at fixed intervals, starting at the time it's added
 or cron is run. This is supported by formatting the cron spec like this:
 
-    @every <duration>
+	@every <duration>
 
 where "duration" is a string accepted by time.ParseDuration
 (http://golang.org/pkg/time/#ParseDuration).
@@ -122,13 +122,12 @@ Note: The interval does not take the job runtime into account.  For example,
 if a job takes 3 minutes to run, and it is scheduled to run every 5 minutes,
 it will have only 2 minutes of idle time between each run.
 
-Time zones
+# Time zones
 
 By default, all interpretation and scheduling is done in the machine's local
 time zone (time.Local). You can specify a different time zone on construction:
 
-	cron.New(
-		cron.WithLocation(time.UTC))
+	cron.New(cron.WithLocation(time.UTC))
 
 Individual cron schedules may also override the time zone they are to be
 interpreted in by providing an additional space-separated field at the beginning
@@ -157,7 +156,7 @@ The prefix "TZ=(TIME ZONE)" is also supported for legacy compatibility.
 Be aware that jobs scheduled during daylight-savings leap-ahead transitions will
 not be run!
 
-Job Wrappers
+# Job Wrappers
 
 A Cron runner may be configured with a chain of job wrappers to add
 cross-cutting functionality to all submitted jobs. For example, they may be used
@@ -180,7 +179,7 @@ Install wrappers for individual jobs by explicitly wrapping them:
 		cron.SkipIfStillRunning(logger),
 	).Then(job)
 
-Thread safety
+# Thread safety
 
 Since the Cron service runs concurrently with the calling code, some amount of
 care must be taken to ensure proper synchronization.
@@ -188,31 +187,23 @@ care must be taken to ensure proper synchronization.
 All cron methods are designed to be correctly synchronized as long as the caller
 ensures that invocations have a clear happens-before ordering between them.
 
-Logging
+# Logging
 
-Cron defines a Logger interface that is a subset of the one defined in
-github.com/go-logr/logr. It has two logging levels (Info and Error), and
-parameters are key/value pairs. This makes it possible for cron logging to plug
-into structured logging systems. An adapter, [Verbose]PrintfLogger, is provided
-to wrap the standard library *log.Logger.
+Cron use [log/slog] package for logging. The logger can be set through its option:
 
-For additional insight into Cron operations, verbose logging may be activated
-which will record job runs, scheduling decisions, and added or removed jobs.
-Activate it with a one-off logger as follows:
+	cron.New(cron.WithLogger(slog.Default()))
 
-	cron.New(
-		cron.WithLogger(
-			cron.VerbosePrintfLogger(log.New(os.Stdout, "cron: ", log.LstdFlags))))
-
-Implementation
+# Implementation
 
 Cron entries are stored in a min heap based on their next activation time.  Cron
 sleeps until the next job is due to be run.
 
 Upon waking:
- - it runs each entry that is active on that second
- - it calculates the next run times for the jobs that were run
- - it updates the heap of entries by next activation time.
- - it goes to sleep until the soonest job.
+  - it runs each entry that is active on that second
+  - it calculates the next run times for the jobs that were run
+  - it updates the heap of entries by next activation time.
+  - it goes to sleep until the soonest job.
+
+[log/slog]: https://pkg.go.dev/log/slog
 */
 package cron
