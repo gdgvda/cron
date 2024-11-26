@@ -18,6 +18,9 @@ func TestParseScheduleErrors(t *testing.T) {
 		{"@unrecognized", "unrecognized descriptor"},
 		{"* * * *", "expected 5 to 6 fields"},
 		{"", "empty spec string"},
+		{"* * * * L", "invalid 'L' usage"},
+		{"* * * L/2 *", "'L' cannot be used with steps"},
+		{"* * * L-4/2 *", "'L' cannot be used with steps"},
 	}
 	for _, c := range tests {
 		actual, err := secondParser.Parse(c.expr)
