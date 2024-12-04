@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -57,17 +58,18 @@ func TestActivation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		sched, err := ParseStandard(test.spec)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		actual := sched.Next(getTime(test.time).Add(-1 * time.Second))
-		expected := getTime(test.time)
-		if test.expected && expected != actual || !test.expected && expected == actual {
-			t.Errorf("Fail evaluating %s on %s: (expected) %s != %s (actual)",
-				test.spec, test.time, expected, actual)
-		}
+		t.Run(fmt.Sprintf("now=%s,spec=%s", test.time, strings.Replace(test.spec, "/", "|", -1)), func(t *testing.T) {
+			sched, err := ParseStandard(test.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := sched.Next(getTime(test.time).Add(-1 * time.Second))
+			expected := getTime(test.time)
+			if test.expected && expected != actual || !test.expected && expected == actual {
+				t.Fatalf("Fail evaluating %s on %s: (expected) %s != %s (actual)",
+					test.spec, test.time, expected, actual)
+			}
+		})
 	}
 }
 
@@ -186,16 +188,17 @@ func TestNext(t *testing.T) {
 	}
 
 	for _, c := range runs {
-		sched, err := secondParser.Parse(c.spec)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		actual := sched.Next(getTime(c.time))
-		expected := getTime(c.expected)
-		if !actual.Equal(expected) {
-			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
-		}
+		t.Run(fmt.Sprintf("now=%s,spec=%s", c.time, strings.Replace(c.spec, "/", "|", -1)), func(t *testing.T) {
+			sched, err := secondParser.Parse(c.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := sched.Next(getTime(c.time))
+			expected := getTime(c.expected)
+			if !actual.Equal(expected) {
+				t.Fatalf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+			}
+		})
 	}
 }
 
@@ -207,10 +210,12 @@ func TestErrors(t *testing.T) {
 		"0 0 * * XYZ",
 	}
 	for _, spec := range invalidSpecs {
-		_, err := ParseStandard(spec)
-		if err == nil {
-			t.Error("expected an error parsing: ", spec)
-		}
+		t.Run(strings.Replace(spec, "/", "|", -1), func(t *testing.T) {
+			_, err := ParseStandard(spec)
+			if err == nil {
+				t.Fatal("expected an error parsing: ", spec)
+			}
+		})
 	}
 }
 
@@ -259,16 +264,17 @@ func TestNextWithTz(t *testing.T) {
 		{"2016-01-03T14:00:00+0530", "14 14 * * ?", "2016-01-03T14:14:00+0530"},
 	}
 	for _, c := range runs {
-		sched, err := ParseStandard(c.spec)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		actual := sched.Next(getTimeTZ(c.time))
-		expected := getTimeTZ(c.expected)
-		if !actual.Equal(expected) {
-			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
-		}
+		t.Run(fmt.Sprintf("now=%s,spec=%s", c.time, strings.Replace(c.spec, "/", "|", -1)), func(t *testing.T) {
+			sched, err := ParseStandard(c.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := sched.Next(getTimeTZ(c.time))
+			expected := getTimeTZ(c.expected)
+			if !actual.Equal(expected) {
+				t.Fatalf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+			}
+		})
 	}
 }
 
@@ -295,6 +301,6 @@ func TestSlash0NoHang(t *testing.T) {
 	schedule := "TZ=America/New_York 15/0 * * * *"
 	_, err := ParseStandard(schedule)
 	if err == nil {
-		t.Error("expected an error on 0 increment")
+		t.Fatal("expected an error on 0 increment")
 	}
 }
