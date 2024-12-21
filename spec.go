@@ -1,61 +1,23 @@
 package cron
 
-import "time"
+import (
+	"time"
 
-// SpecSchedule specifies a duty cycle (to the second granularity), based on a
-// traditional crontab specification. It is computed initially and stored as bit sets.
-type SpecSchedule struct {
-	Second, Minute, Hour, Dom, Month, Dow uint64
+	"github.com/gdgvda/cron/internal/matcher"
+)
+
+// Specifies a duty cycle (to the second granularity), based on a
+// traditional crontab specification.
+type specSchedule struct {
+	SecondMatch, MinuteMatch, HourMatch, DayMatch, MonthMatch matcher.Matcher
 
 	// Override location for this schedule.
 	Location *time.Location
 }
 
-// bounds provides a range of acceptable values (plus a map of name to value).
-type bounds struct {
-	min, max uint
-	names    map[string]uint
-}
-
-// The bounds for each field.
-var (
-	seconds = bounds{0, 59, nil}
-	minutes = bounds{0, 59, nil}
-	hours   = bounds{0, 23, nil}
-	dom     = bounds{1, 31, nil}
-	months  = bounds{1, 12, map[string]uint{
-		"jan": 1,
-		"feb": 2,
-		"mar": 3,
-		"apr": 4,
-		"may": 5,
-		"jun": 6,
-		"jul": 7,
-		"aug": 8,
-		"sep": 9,
-		"oct": 10,
-		"nov": 11,
-		"dec": 12,
-	}}
-	dow = bounds{0, 6, map[string]uint{
-		"sun": 0,
-		"mon": 1,
-		"tue": 2,
-		"wed": 3,
-		"thu": 4,
-		"fri": 5,
-		"sat": 6,
-	}}
-)
-
-const (
-	// Set the top bit if a star was included in the expression.
-	starBit = 1 << 63
-)
-
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
-func (s *SpecSchedule) Next(t time.Time) time.Time {
+func (s *specSchedule) Next(t time.Time) time.Time {
 	// General approach
 	//
 	// For Month, Day, Hour, Minute, Second:
@@ -94,7 +56,7 @@ WRAP:
 
 	// Find the first applicable month.
 	// If it's this month, then do nothing.
-	for 1<<uint(t.Month())&s.Month == 0 {
+	for !s.MonthMatch(t) {
 		// If we have to add a month, reset the other parts to 0.
 		if !added {
 			added = true
@@ -114,7 +76,7 @@ WRAP:
 	// NOTE: This causes issues for daylight savings regimes where midnight does
 	// not exist.  For example: Sao Paulo has DST that transforms midnight on
 	// 11/3 into 1am. Handle that by noticing when the Hour ends up != 0.
-	for !dayMatches(s, t) {
+	for !s.DayMatch(t) {
 		if !added {
 			added = true
 			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
@@ -135,7 +97,7 @@ WRAP:
 		}
 	}
 
-	for 1<<uint(t.Hour())&s.Hour == 0 {
+	for !s.HourMatch(t) {
 		if !added {
 			added = true
 			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc)
@@ -147,7 +109,7 @@ WRAP:
 		}
 	}
 
-	for 1<<uint(t.Minute())&s.Minute == 0 {
+	for !s.MinuteMatch(t) {
 		if !added {
 			added = true
 			t = t.Truncate(time.Minute)
@@ -159,7 +121,7 @@ WRAP:
 		}
 	}
 
-	for 1<<uint(t.Second())&s.Second == 0 {
+	for !s.SecondMatch(t) {
 		if !added {
 			added = true
 			t = t.Truncate(time.Second)
@@ -172,17 +134,4 @@ WRAP:
 	}
 
 	return t.In(origLocation)
-}
-
-// dayMatches returns true if the schedule's day-of-week and day-of-month
-// restrictions are satisfied by the given time.
-func dayMatches(s *SpecSchedule, t time.Time) bool {
-	var (
-		domMatch bool = 1<<uint(t.Day())&s.Dom > 0
-		dowMatch bool = 1<<uint(t.Weekday())&s.Dow > 0
-	)
-	if s.Dom&starBit > 0 || s.Dow&starBit > 0 {
-		return domMatch && dowMatch
-	}
-	return domMatch || dowMatch
 }
