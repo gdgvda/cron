@@ -31,6 +31,25 @@ func parseDom(expression string) (matcher.Matcher, error) {
 		return nil, fmt.Errorf("%s: invalid expression", expression)
 	}
 
+	if lowAndHigh[0] == "L" {
+		if len(rangeAndStep) > 1 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+
+		var offset uint = 0
+		if len(lowAndHigh) == 2 {
+			var err error
+			offset, err = mustParseInt(lowAndHigh[1])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return func(t time.Time) bool {
+			lastDayOfCurrentMonth := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 1, -1).Day()
+			return t.Day() == lastDayOfCurrentMonth-int(offset)
+		}, nil
+	}
+
 	if lowAndHigh[0] == "*" || lowAndHigh[0] == "?" {
 		if len(lowAndHigh) > 1 {
 			return nil, fmt.Errorf("%s: invalid expression", expression)
