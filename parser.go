@@ -140,7 +140,7 @@ func (p Parser) Parse(spec string) (Schedule, error) {
 		return nil, err
 	}
 
-	return &SpecSchedule{
+	return &specSchedule{
 		SecondMatch: second,
 		MinuteMatch: minute,
 		HourMatch:   hour,
@@ -259,7 +259,7 @@ func parseDescriptor(descriptor string, loc *time.Location) (Schedule, error) {
 	return nil, fmt.Errorf("unrecognized descriptor: %s", descriptor)
 }
 
-func create(second, minute, hour, dom, month, dow string, location *time.Location) (*SpecSchedule, error) {
+func create(second, minute, hour, dom, month, dow string, location *time.Location) (*specSchedule, error) {
 	secondMatch, err := parser.ParseSecond(second)
 	if err != nil {
 		return nil, err
@@ -280,7 +280,7 @@ func create(second, minute, hour, dom, month, dow string, location *time.Locatio
 	if err != nil {
 		return nil, err
 	}
-	return &SpecSchedule{
+	return &specSchedule{
 		SecondMatch: secondMatch,
 		MinuteMatch: minuteMatch,
 		HourMatch:   hourMatch,

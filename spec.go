@@ -6,9 +6,9 @@ import (
 	"github.com/gdgvda/cron/internal/matcher"
 )
 
-// SpecSchedule specifies a duty cycle (to the second granularity), based on a
+// Specifies a duty cycle (to the second granularity), based on a
 // traditional crontab specification.
-type SpecSchedule struct {
+type specSchedule struct {
 	SecondMatch, MinuteMatch, HourMatch, DayMatch, MonthMatch matcher.Matcher
 
 	// Override location for this schedule.
@@ -17,7 +17,7 @@ type SpecSchedule struct {
 
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
-func (s *SpecSchedule) Next(t time.Time) time.Time {
+func (s *specSchedule) Next(t time.Time) time.Time {
 	// General approach
 	//
 	// For Month, Day, Hour, Minute, Second:
