@@ -18,15 +18,20 @@ func TestParseScheduleErrors(t *testing.T) {
 		{"@unrecognized", "unrecognized descriptor"},
 		{"* * * *", "expected 5 to 6 fields"},
 		{"", "empty spec string"},
+		{"* * * * L", "failed to parse"},
+		{"* * * L/2 *", "L/2: invalid expression"},
+		{"* * * L-4/2 *", "L-4/2: invalid expression"},
 	}
 	for _, c := range tests {
-		actual, err := secondParser.Parse(c.expr)
-		if err == nil || !strings.Contains(err.Error(), c.err) {
-			t.Errorf("%s => expected %v, got %v", c.expr, c.err, err)
-		}
-		if actual != nil {
-			t.Errorf("expected nil schedule on error, got %v", actual)
-		}
+		t.Run(strings.Replace(c.expr, "/", "|", -1), func(t *testing.T) {
+			actual, err := secondParser.Parse(c.expr)
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%s => expected %v, got %v", c.expr, c.err, err)
+			}
+			if actual != nil {
+				t.Errorf("expected nil schedule on error, got %v", actual)
+			}
+		})
 	}
 }
 

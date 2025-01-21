@@ -55,6 +55,11 @@ func TestActivation(t *testing.T) {
 		{"Mon Jul 9 00:00 2012", "* * 1,15 * *", false},
 		{"Sun Jul 15 00:00 2012", "* * 1,15 * *", true},
 		{"Sun Jul 15 00:00 2012", "* * */2 * Sun", true},
+
+		// Last day of month
+		{"Sun Jul 15 00:00 2012", "* * L * *", false},
+		{"Tue Jul 31 00:00 2012", "* * L * *", true},
+		{"Tue Jul 31 00:00 2012", "* * L * Mon", true},
 	}
 
 	for _, test := range tests {
@@ -185,6 +190,17 @@ func TestNext(t *testing.T) {
 		// https://github.com/robfig/cron/issues/157
 		{"2018-10-17T05:00:00-0400", "TZ=America/Sao_Paulo 0 0 9 10 * ?", "2018-11-10T06:00:00-0500"},
 		{"2018-02-14T05:00:00-0500", "TZ=America/Sao_Paulo 0 0 9 22 * ?", "2018-02-22T07:00:00-0500"},
+
+		// Last day of month
+		{"Tue Jan 2 23:35 2024", "0 0 0 L * *", "Wed Jan 31 00:00 2024"},
+		{"Fri Feb 2 23:35 2024", "0 0 0 L * *", "Thu Feb 29 00:00 2024"},
+		{"Thu Feb 2 23:35 2023", "0 0 0 L * *", "Tue Feb 28 00:00 2023"},
+		{"Sat Nov 2 23:35 2024", "0 0 0 L * *", "Sat Nov 30 00:00 2024"},
+		{"Sat Nov 30 18:25 2024", "0 20 18 L * *", "Tue Dec 31 18:20 2024"},
+		{"Sat Nov 30 18:25 2024", "0 20 18 L-1 * *", "Tue Dec 30 18:20 2024"},
+		{"Sat Nov 30 18:25 2024", "0 20 18 L-2 * *", "Tue Dec 29 18:20 2024"},
+		{"Tue Jan 2 23:35 2024", "0 0 0 L,10 * *", "Wed Jan 10 00:00 2024"},
+		{"Tue Jan 11 23:35 2024", "0 0 0 L,10 * *", "Wed Jan 31 00:00 2024"},
 	}
 
 	for _, c := range runs {
