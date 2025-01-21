@@ -32,14 +32,14 @@ A cron expression represents a set of times, using 5 space-separated fields.
 	----------   | ---------- | --------------  | --------------------------
 	Minutes      | Yes        | 0-59            | * / , -
 	Hours        | Yes        | 0-23            | * / , -
-	Day of month | Yes        | 1-31            | * / , - ?
+	Day of month | Yes        | 1-31            | * / , - ? L
 	Month        | Yes        | 1-12 or JAN-DEC | * / , -
 	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ?
 
 Month and Day-of-week field values are case insensitive.  "SUN", "Sun", and
 "sun" are equally accepted.
 
-The specific interpretation of the format is based on the Cron Wikipedia page:
+The specific interpretation of the format is mainly based on the Cron Wikipedia page:
 https://en.wikipedia.org/wiki/Cron
 
 # Alternative Formats
@@ -92,6 +92,13 @@ Question mark ( ? )
 
 Question mark may be used instead of '*' for leaving either day-of-month or
 day-of-week blank.
+
+Last ( L )
+
+L char can be used in day-of-month field meaning the last day of the month.
+It can be used subtracting a number of days, for example L-1 would mean
+"One day before the last day of the month" (30th for months with 31 days).
+Cannot be used with steps (slash).
 
 # Predefined schedules
 

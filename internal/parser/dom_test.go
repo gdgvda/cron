@@ -62,6 +62,7 @@ func TestParseDomMatcher(t *testing.T) {
 
 		{"L-2", "Jan 29 2024", true},
 		{"L-2", "Jan 22 2024", false},
+		{"L-2,22", "Jan 22 2024", true},
 		{"L-30", "Jan 1 2024", true},
 	}
 
