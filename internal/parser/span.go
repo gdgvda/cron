@@ -30,6 +30,9 @@ func span(expression string, min, max uint, strToInt map[string]uint) ([]uint, e
 		if high < min || high > max {
 			return nil, fmt.Errorf("%s: value %d out of valid range [%d, %d]", expression, high, min, max)
 		}
+		if high < low {
+			return nil, fmt.Errorf("%s: beginning of range (%d) beyond end of range (%d)", expression, low, high)
+		}
 	default:
 		return nil, fmt.Errorf("too many hyphens: %s", expression)
 	}

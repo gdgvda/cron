@@ -11,7 +11,10 @@ import (
 var domToInt = map[string]uint{}
 
 func ParseDom(expression string) (matcher.Matcher, error) {
-	options := strings.FieldsFunc(expression, func(r rune) bool { return r == ',' })
+	options, err := splitOptions(expression)
+	if err != nil {
+		return nil, err
+	}
 	matches := []matcher.Matcher{}
 	for _, option := range options {
 		match, err := parseDom(option)
@@ -42,6 +45,9 @@ func parseDom(expression string) (matcher.Matcher, error) {
 			offset, err = mustParseInt(lowAndHigh[1])
 			if err != nil {
 				return nil, err
+			}
+			if offset > 30 {
+				return nil, fmt.Errorf("%s: invalid amount of days subtracted", expression)
 			}
 		}
 		return func(t time.Time) bool {
