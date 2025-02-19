@@ -19,7 +19,10 @@ var dowToInt = map[string]uint{
 }
 
 func ParseDow(expression string) (matcher.Matcher, error) {
-	options := strings.FieldsFunc(expression, func(r rune) bool { return r == ',' })
+	options, err := splitOptions(expression)
+	if err != nil {
+		return nil, err
+	}
 	matches := []matcher.Matcher{}
 	for _, option := range options {
 		match, err := parseDow(option)
