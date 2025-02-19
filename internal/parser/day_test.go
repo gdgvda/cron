@@ -20,6 +20,9 @@ func TestParseDayMatcher(t *testing.T) {
 		{"3", "*", "Fri Jan 3 2025", true},
 		{"1", "Thu", "Thu Jan 2 2025", true},
 		{"2", "Sat", "Thu Jan 2 2025", true},
+		{"*", "1L", "Mon Jan 27 2025", true},
+		{"L-4", "4L", "Mon Jan 27 2025", true},
+		{"*", "1L", "Mon Jan 20 2025", false},
 	}
 
 	const layout = "Mon Jan 2 2006"
