@@ -44,8 +44,13 @@ var defaults = []string{
 	"*",
 }
 
-// A custom Parser that can be configured.
-type Parser struct {
+// Parser is an interface for schedule spec parsers that return a Schedule
+type Parser interface {
+	Parse(spec string) (Schedule, error)
+}
+
+// A default defaultParser that can be configured.
+type defaultParser struct {
 	options ParseOption
 }
 
@@ -78,13 +83,13 @@ func NewParser(options ParseOption) Parser {
 	if optionals > 1 {
 		panic("multiple optionals may not be configured")
 	}
-	return Parser{options}
+	return defaultParser{options}
 }
 
 // Parse returns a new crontab schedule representing the given spec.
 // It returns a descriptive error if the spec is not valid.
 // It accepts crontab specs and features configured by NewParser.
-func (p Parser) Parse(spec string) (Schedule, error) {
+func (p defaultParser) Parse(spec string) (Schedule, error) {
 	if len(spec) == 0 {
 		return nil, fmt.Errorf("empty spec string")
 	}
