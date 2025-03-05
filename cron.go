@@ -23,14 +23,9 @@ type Cron struct {
 	logger    *slog.Logger
 	runningMu sync.Mutex
 	location  *time.Location
-	parser    ScheduleParser
+	parser    Parser
 	next      ID
 	jobWaiter sync.WaitGroup
-}
-
-// ScheduleParser is an interface for schedule spec parsers that return a Schedule
-type ScheduleParser interface {
-	Parse(spec string) (Schedule, error)
 }
 
 // Schedule describes a job's duty cycle.
