@@ -21,6 +21,7 @@ func TestParseDowMatcher(t *testing.T) {
 		{"5", "Fri Jan 3 2025", true},
 		{"2", "Wed Jan 8 2025", false},
 		{"6", "Sat Jan 4 2025", true},
+		{"0", "Sun Jan 5 2025", true},
 		{"Sat", "Sat Jan 4 2025", true},
 		{"SAT", "Sat Jan 4 2025", true},
 
@@ -107,6 +108,7 @@ func TestParseDowErrors(t *testing.T) {
 		{"AL", "failed to parse"},
 		{"1L/3", "invalid expression"},
 		{"L-3", "invalid expression"},
+		{"L-", "invalid expression"},
 	}
 
 	for _, test := range tests {

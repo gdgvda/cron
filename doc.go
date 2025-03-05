@@ -34,7 +34,7 @@ A cron expression represents a set of times, using 5 space-separated fields.
 	Hours        | Yes        | 0-23            | * / , -
 	Day of month | Yes        | 1-31            | * / , - ? L
 	Month        | Yes        | 1-12 or JAN-DEC | * / , -
-	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ?
+	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ? L
 
 Month and Day-of-week field values are case insensitive.  "SUN", "Sun", and
 "sun" are equally accepted.
@@ -99,6 +99,11 @@ L char can be used in day-of-month field meaning the last day of the month.
 It can be used subtracting a number of days, for example L-1 would mean
 "One day before the last day of the month" (30th for months with 31 days).
 Cannot be used with steps (slash).
+
+L char can be also used in day-of-week field. If alone, it's equivalent to 6 (Saturday).
+If used after a day-of-week value it indicates the last occurence of that dow in the month.
+For example, FRIL would mean the last friday of the month.
+Cannot be used with steps or ranges.
 
 # Predefined schedules
 
