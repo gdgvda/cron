@@ -48,9 +48,32 @@ func parseDow(expression string) (matcher.Matcher, error) {
 		}
 		lowAndHigh[0] = "0-6"
 	} else {
-		if len(lowAndHigh) == 1 && len(rangeAndStep) == 2 {
+		if !strings.HasSuffix(lowAndHigh[0], "L") && len(lowAndHigh) == 1 && len(rangeAndStep) == 2 {
 			lowAndHigh[0] += "-6"
 		}
+	}
+
+	if lowAndHigh[0] == "L" {
+		if len(lowAndHigh) > 1 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+		lowAndHigh[0] = "6"
+	}
+	if strings.HasSuffix(lowAndHigh[0], "L") {
+		if len(lowAndHigh) > 1 || len(rangeAndStep) > 1 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+		dow, err := parseIntOrName(strings.TrimSuffix(lowAndHigh[0], "L"), dowToInt)
+		if err != nil {
+			return nil, err
+		}
+		if dow > 6 {
+			return nil, fmt.Errorf("%s: value %d out of valid range [0, 6]", expression, dow)
+		}
+		return func(t time.Time) bool {
+			next := t.AddDate(0, 0, 7)
+			return next.Month() != t.Month() && t.Weekday() == time.Weekday(dow)
+		}, nil
 	}
 
 	expression = strings.Join(lowAndHigh, "-")
