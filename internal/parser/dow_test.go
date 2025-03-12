@@ -121,6 +121,8 @@ func TestParseDowErrors(t *testing.T) {
 		{"4#", "failed to parse"},
 		{"2-#", "failed to parse"},
 		{"2#1/3", "invalid expression"},
+		{"2#1#", "invalid expression"},
+		{"-2#2", "failed to parse"},
 		{"#4", "failed to parse"},
 		{"3#6", "3#6: value 6 out of valid range [1, 5]"},
 		{"3#0", "3#0: value 0 out of valid range [1, 5]"},
