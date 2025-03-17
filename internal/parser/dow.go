@@ -46,10 +46,11 @@ func parseDow(expression string) (matcher.Matcher, error) {
 		if len(lowAndHigh) > 1 {
 			return nil, fmt.Errorf("%s: invalid expression", expression)
 		}
-		lowAndHigh[0] = "0-6"
+		lowAndHigh[0] = "0"
+		lowAndHigh = append(lowAndHigh, "6")
 	} else {
 		if !strings.HasSuffix(lowAndHigh[0], "L") && len(lowAndHigh) == 1 && len(rangeAndStep) == 2 {
-			lowAndHigh[0] += "-6"
+			lowAndHigh = append(lowAndHigh, "6")
 		}
 	}
 

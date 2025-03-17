@@ -38,10 +38,11 @@ func parseMinute(expression string) (matcher.Matcher, error) {
 		if len(lowAndHigh) > 1 {
 			return nil, fmt.Errorf("%s: invalid expression", expression)
 		}
-		lowAndHigh[0] = "0-59"
+		lowAndHigh[0] = "0"
+		lowAndHigh = append(lowAndHigh, "59")
 	} else {
 		if len(lowAndHigh) == 1 && len(rangeAndStep) == 2 {
-			lowAndHigh[0] += "-59"
+			lowAndHigh = append(lowAndHigh, "59")
 		}
 	}
 

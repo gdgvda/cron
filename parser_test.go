@@ -332,8 +332,8 @@ func getDate(schedule string, name string) (string, string) {
 // mightNotExist filters a supersets of dates that don't exist
 func mightNotExist(day, month string) bool {
 	return contains(month, day, "2", "feb", "30", "31", "L-30", "L-29") ||
-		contains(month, day, "4", "apr", "31", "L-31") ||
-		contains(month, day, "6", "jun", "31", "L-31") ||
+		contains(month, day, "4", "apr", "31", "L-30") ||
+		contains(month, day, "6", "jun", "31", "L-30") ||
 		contains(month, day, "9", "sep", "31", "L-30") ||
 		contains(month, day, "11", "nov", "31", "L-30")
 }
@@ -384,7 +384,7 @@ func getNonTzFields(schedule string) []string {
 func validateChars(t *testing.T, fields []string, name string) {
 	for _, field := range fields {
 		for _, c := range field {
-			if !strings.ContainsRune("0123456789+*-,/?sunmotewdhfriajbpylgcv", unicode.ToLower(c)) {
+			if !strings.ContainsRune("0123456789+#*-,/?sunmotewdhfriajbpylgcv", unicode.ToLower(c)) {
 				t.Errorf("unexpected character %c in %s for %s", c, fields, name)
 			}
 		}

@@ -51,10 +51,11 @@ func parseMonth(expression string) (matcher.Matcher, error) {
 		if len(lowAndHigh) > 1 {
 			return nil, fmt.Errorf("%s: invalid expression", expression)
 		}
-		lowAndHigh[0] = "1-12"
+		lowAndHigh[0] = "1"
+		lowAndHigh = append(lowAndHigh, "12")
 	} else {
 		if len(lowAndHigh) == 1 && len(rangeAndStep) == 2 {
-			lowAndHigh[0] += "-12"
+			lowAndHigh = append(lowAndHigh, "12")
 		}
 	}
 
