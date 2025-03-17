@@ -59,6 +59,7 @@ func TestParseDowMatcher(t *testing.T) {
 
 		{"0#2", "Sun Jan 5 2025", false},
 		{"0#2", "Sun Jan 12 2025", true},
+		{"0#2", "Sun Jan 19 2025", false},
 		{"SUN#2", "Sun Jan 12 2025", true},
 		{"THU#5", "Thu Feb 29 2024", true},
 		{"3L,THU#4", "Thu Feb 22 2024", true},
