@@ -32,7 +32,7 @@ A cron expression represents a set of times, using 5 space-separated fields.
 	----------   | ---------- | --------------  | --------------------------
 	Minutes      | Yes        | 0-59            | * / , -
 	Hours        | Yes        | 0-23            | * / , -
-	Day of month | Yes        | 1-31            | * / , - ? L
+	Day of month | Yes        | 1-31            | * / , - ? L W
 	Month        | Yes        | 1-12 or JAN-DEC | * / , -
 	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ? L
 
@@ -103,6 +103,18 @@ Cannot be used with steps (slash).
 L char can be also used in day-of-week field. If alone, it's equivalent to 6 (Saturday).
 If used after a day-of-week value it indicates the last occurence of that dow in the month.
 For example, FRIL would mean the last friday of the month.
+Cannot be used with steps or ranges.
+
+L char can be combined with W (LW) meaning the last weekday of the month.
+LW cannot be used with steps or ranges.
+
+Nearest weekday ( W )
+
+W char can be used in day-of-month field to specify the weekday (Monday-Friday) nearest the given day.
+For example, given 19W dom, if the 19th is Saturday the expression would activate on Friday 18th.
+If the 19th is a Sunday instead, the expression would activate on Monday 20th.
+The W char looks for weekdays within the month boundaries. Given a 1W dom with the 1st being a Saturday,
+the expression would activate on Monday 3rd.
 Cannot be used with steps or ranges.
 
 # Predefined schedules
