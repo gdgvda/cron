@@ -56,6 +56,16 @@ func TestParseDowMatcher(t *testing.T) {
 		{"L", "Sat Jan 25 2025", true},
 		{"L", "Sat Jan 18 2025", true},
 		{"1L,2L", "Tue Jan 28 2025", true},
+
+		{"0#2", "Sun Jan 5 2025", false},
+		{"0#2", "Sun Jan 12 2025", true},
+		{"0#2", "Sun Jan 19 2025", false},
+		{"SUN#2", "Sun Jan 12 2025", true},
+		{"THU#5", "Thu Feb 29 2024", true},
+		{"3L,THU#4", "Thu Feb 22 2024", true},
+		{"1#1,THU#4", "Thu Feb 22 2024", true},
+		{"1#1,THU#4", "Mon Feb 5 2024", true},
+		{"1#1,THU#4", "Mon Feb 12 2024", false},
 	}
 
 	const layout = "Mon Jan 2 2006"
@@ -109,6 +119,15 @@ func TestParseDowErrors(t *testing.T) {
 		{"1L/3", "invalid expression"},
 		{"L-3", "invalid expression"},
 		{"L-", "invalid expression"},
+		{"4#", "failed to parse"},
+		{"2-#", "failed to parse"},
+		{"2#1/3", "invalid expression"},
+		{"2#1#", "invalid expression"},
+		{"-2#2", "failed to parse"},
+		{"#4", "failed to parse"},
+		{"3#6", "3#6: value 6 out of valid range [1, 5]"},
+		{"3#0", "3#0: value 0 out of valid range [1, 5]"},
+		{"7#3", "7#3: value 7 out of valid range [0, 6]"},
 	}
 
 	for _, test := range tests {

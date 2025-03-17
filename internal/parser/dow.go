@@ -76,6 +76,40 @@ func parseDow(expression string) (matcher.Matcher, error) {
 		}, nil
 	}
 
+	if strings.Contains(lowAndHigh[0], "#") {
+		if len(lowAndHigh) > 1 || len(rangeAndStep) > 1 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+		dowAndOccurrence := strings.Split(lowAndHigh[0], "#")
+		if len(dowAndOccurrence) != 2 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+		dow, err := parseIntOrName(dowAndOccurrence[0], dowToInt)
+		if err != nil {
+			return nil, err
+		}
+		if dow > 6 {
+			return nil, fmt.Errorf("%s: value %d out of valid range [0, 6]", expression, dow)
+		}
+		occurrence, err := mustParseInt(dowAndOccurrence[1])
+		if err != nil {
+			return nil, err
+		}
+		if occurrence < 1 || occurrence > 5 {
+			return nil, fmt.Errorf("%s: value %d out of valid range [1, 5]", expression, occurrence)
+		}
+		return func(t time.Time) bool {
+			start := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
+			end := start.AddDate(0, 1, -1)
+			for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
+				if d.Weekday() == time.Weekday(dow) {
+					return t.Day() == d.AddDate(0, 0, 7*(int(occurrence)-1)).Day()
+				}
+			}
+			return false
+		}, nil
+	}
+
 	expression = strings.Join(lowAndHigh, "-")
 	if len(rangeAndStep) > 1 {
 		expression += "/" + rangeAndStep[1]
