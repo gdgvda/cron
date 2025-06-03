@@ -273,7 +273,7 @@ func (c *Cron) startJob(job func()) {
 
 // now returns current time in c location
 func (c *Cron) now() time.Time {
-	return time.Now().In(c.location)
+	return GetTimeNow().In(c.location)
 }
 
 // Stop stops the cron scheduler if it is running; otherwise it does nothing.
@@ -310,4 +310,19 @@ func (c *Cron) removeEntry(id ID) {
 			return
 		}
 	}
+}
+
+// FnTimeNow allows overriding the time source used by the cron scheduler.
+// When set to a non-nil function, it will be called instead of time.Now().
+// This is useful for testing or to provide a custom time source to avoid
+// system time deviations.
+var FnTimeNow func() time.Time
+
+// GetTimeNow returns the current time using the configured time source.
+// If FnTimeNow is set, it uses that function; otherwise it falls back to time.Now().
+func GetTimeNow() time.Time {
+	if FnTimeNow != nil {
+		return FnTimeNow()
+	}
+	return time.Now()
 }

@@ -66,7 +66,7 @@ func DelayIfStillRunning(logger *slog.Logger) JobWrapper {
 	return func(job func()) func() {
 		var mu sync.Mutex
 		return func() {
-			start := time.Now()
+			start := GetTimeNow()
 			mu.Lock()
 			defer mu.Unlock()
 			if dur := time.Since(start); dur > time.Minute {
