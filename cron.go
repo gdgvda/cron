@@ -218,8 +218,8 @@ func (c *Cron) run() {
 
 		for {
 			select {
-			case now = <-timer.C:
-				now = now.In(c.location)
+			case <-timer.C:
+				now = c.now()
 				c.logger.Debug("scheduler woke up", "event", "wake", "now", now)
 
 				// Run every entry whose next time was less than now
