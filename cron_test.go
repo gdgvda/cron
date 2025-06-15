@@ -395,7 +395,8 @@ func TestNonLocalTimezone(t *testing.T) {
 	spec := fmt.Sprintf("%d,%d %d %d %d %d ?",
 		now.Second()+1, now.Second()+2, now.Minute(), now.Hour(), now.Day(), now.Month())
 
-	cron := New(WithLocation(loc), WithParser(secondParser))
+	clock := NewDefaultClock(loc)
+	cron := New(WithClock(clock), WithParser(secondParser))
 	_, err = cron.Add(spec, func() { wg.Done() })
 	if err != nil {
 		t.Error("non-nil error")
