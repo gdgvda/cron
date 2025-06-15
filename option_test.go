@@ -7,18 +7,19 @@ import (
 	"time"
 )
 
-func TestWithLocation(t *testing.T) {
-	c := New(WithLocation(time.UTC))
-	if c.location != time.UTC {
-		t.Errorf("expected UTC, got %v", c.location)
-	}
-}
-
 func TestWithParser(t *testing.T) {
 	var parser = NewParser(Dow)
 	c := New(WithParser(parser))
 	if c.parser != parser {
 		t.Error("expected provided parser")
+	}
+}
+
+func TestWithClock(t *testing.T) {
+	clock := NewDefaultClock(time.UTC)
+	c := New(WithClock(clock))
+	if c.clock != clock {
+		t.Error("expected provided clock")
 	}
 }
 
