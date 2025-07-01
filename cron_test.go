@@ -395,7 +395,8 @@ func TestNonLocalTimezone(t *testing.T) {
 	spec := fmt.Sprintf("%d,%d %d %d %d %d ?",
 		now.Second()+1, now.Second()+2, now.Minute(), now.Hour(), now.Day(), now.Month())
 
-	cron := New(WithLocation(loc), WithParser(secondParser))
+	clock := NewDefaultClock(loc)
+	cron := New(WithClock(clock), WithParser(secondParser))
 	_, err = cron.Add(spec, func() { wg.Done() })
 	if err != nil {
 		t.Error("non-nil error")
@@ -829,4 +830,18 @@ func must[T any](val T, err error) T {
 		panic(err)
 	}
 	return val
+}
+
+func TestRunTo(t *testing.T) {
+	clock := NewFakeClock(time.UTC, time.Now())
+	c := New(WithParser(secondParser), WithClock(clock), WithSeconds())
+	c.Add("0 0 * * * *", func() {
+		t.Logf("fake job at %v", clock.Now())
+	})
+	endTime := clock.Now().Add(time.Hour * 24)
+	t.Logf("start cron at %v, runTo %v", clock.Now(), endTime)
+	c.Start()
+	defer c.Stop()
+
+	c.RunTo(endTime)
 }

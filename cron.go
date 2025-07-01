@@ -13,19 +13,22 @@ import (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries   entryHeap
-	chain     Chain
-	stop      chan struct{}
-	add       chan *Entry
-	remove    chan ID
-	snapshot  chan chan []Entry
-	running   bool
-	logger    *slog.Logger
-	runningMu sync.Mutex
-	location  *time.Location
-	parser    Parser
-	next      ID
-	jobWaiter sync.WaitGroup
+	entries    entryHeap
+	chain      Chain
+	stop       chan struct{}
+	add        chan *Entry
+	remove     chan ID
+	snapshot   chan chan []Entry
+	running    bool
+	logger     *slog.Logger
+	runningMu  sync.Mutex
+	parser     Parser
+	next       ID
+	jobWaiter  sync.WaitGroup
+	clock      Clock
+	timeNext   time.Time
+	timer      Timer
+	timeWaiter *sync.WaitGroup
 }
 
 // Schedule describes a job's duty cycle.
@@ -86,9 +89,9 @@ func New(opts ...Option) *Cron {
 		running:   false,
 		runningMu: sync.Mutex{},
 		logger:    slog.Default(),
-		location:  time.Local,
 		parser:    standardParser,
 		next:      1,
+		clock:     NewDefaultClock(time.Local),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -144,11 +147,6 @@ func (c *Cron) Entries() []Entry {
 	return c.entrySnapshot()
 }
 
-// Location gets the time zone location
-func (c *Cron) Location() *time.Location {
-	return c.location
-}
-
 // Entry returns a snapshot of the given entry, or nil if it couldn't be found.
 func (c *Cron) Entry(id ID) Entry {
 	for _, entry := range c.Entries() {
@@ -199,27 +197,37 @@ func (c *Cron) run() {
 	c.logger.Info("starting scheduler", "event", "start")
 
 	// Figure out the next activation times for each entry.
-	now := c.now()
+	now := c.clock.Now()
 	for _, entry := range c.entries {
 		entry.Next = entry.Schedule.Next(now)
 		entry.logger.Debug("next execution time computed", "event", "next", "now", now, "next", entry.Next)
 	}
 	heap.Init(&c.entries)
 
+	timeMayChange := false
+
 	for {
-		var timer *time.Timer
 		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
 			// If there are no entries yet, just sleep - it still handles new entries
 			// and stop requests.
-			timer = time.NewTimer(100000 * time.Hour)
+			c.timeNext = c.clock.Now().Add(100000 * time.Hour)
 		} else {
-			timer = time.NewTimer(c.entries[0].Next.Sub(now))
+			c.timeNext = c.entries[0].Next
+		}
+		c.timer = c.clock.Timer(c.timeNext)
+		if c.timeWaiter != nil {
+			// release after new timer is settled
+			c.timeWaiter.Done()
 		}
 
 		for {
 			select {
-			case now = <-timer.C:
-				now = now.In(c.location)
+			case now := <-c.timer.Chan():
+				if timeMayChange {
+					// Wait for all jobs in the previous round to complete
+					c.jobWaiter.Wait()
+				}
+				timeMayChange = c.clock.SetTime(now)
 				c.logger.Debug("scheduler woke up", "event", "wake", "now", now)
 
 				// Run every entry whose next time was less than now
@@ -236,8 +244,8 @@ func (c *Cron) run() {
 				}
 
 			case newEntry := <-c.add:
-				timer.Stop()
-				now = c.now()
+				c.timer.Stop()
+				now = c.clock.Now()
 				newEntry.Next = newEntry.Schedule.Next(now)
 				heap.Push(&c.entries, newEntry)
 				newEntry.logger.Info("added new entry", "event", "add", "now", now, "next", newEntry.Next)
@@ -247,19 +255,41 @@ func (c *Cron) run() {
 				continue
 
 			case <-c.stop:
-				timer.Stop()
+				c.timer.Stop()
 				c.logger.Info("stopping scheduler", "event", "stop")
 				return
 
 			case id := <-c.remove:
-				timer.Stop()
-				now = c.now()
+				c.timer.Stop()
 				c.removeEntry(id)
 			}
 
 			break
 		}
 	}
+}
+
+func (c *Cron) RunTo(t time.Time) {
+	if !c.clock.SetTime(c.clock.Now()) {
+		panic("clock does not support time travel")
+	}
+	c.timeWaiter = &sync.WaitGroup{}
+	if c.timer == nil {
+		c.timeWaiter.Add(1)
+		c.timeWaiter.Wait()
+	}
+	ft, ok := c.timer.(FireableTimer)
+	if !ok {
+		panic("timer does not support time travel")
+	}
+	for c.timeNext.Before(t) {
+		c.logger.Debug("try fire timer", "at", c.timeNext.String())
+		c.timeWaiter.Add(1)
+		ft.Fire()
+		c.timeWaiter.Wait()
+		ft = c.timer.(FireableTimer)
+	}
+	c.timeWaiter = nil
 }
 
 // startJob runs the given job in a new goroutine.
@@ -269,11 +299,6 @@ func (c *Cron) startJob(job func()) {
 		defer c.jobWaiter.Done()
 		job()
 	}()
-}
-
-// now returns current time in c location
-func (c *Cron) now() time.Time {
-	return time.Now().In(c.location)
 }
 
 // Stop stops the cron scheduler if it is running; otherwise it does nothing.
