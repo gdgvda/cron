@@ -13,19 +13,22 @@ import (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries   entryHeap
-	chain     Chain
-	stop      chan struct{}
-	add       chan *Entry
-	remove    chan ID
-	snapshot  chan chan []Entry
-	running   bool
-	logger    *slog.Logger
-	runningMu sync.Mutex
-	parser    Parser
-	next      ID
-	jobWaiter sync.WaitGroup
-	clock     Clock
+	entries    entryHeap
+	chain      Chain
+	stop       chan struct{}
+	add        chan *Entry
+	remove     chan ID
+	snapshot   chan chan []Entry
+	running    bool
+	logger     *slog.Logger
+	runningMu  sync.Mutex
+	parser     Parser
+	next       ID
+	jobWaiter  sync.WaitGroup
+	clock      Clock
+	timeNext   time.Time
+	timer      Timer
+	timeWaiter *sync.WaitGroup
 }
 
 // Schedule describes a job's duty cycle.
@@ -202,20 +205,23 @@ func (c *Cron) run() {
 	heap.Init(&c.entries)
 
 	for {
-		var timer <-chan struct{}
-		var stop func()
 		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
 			// If there are no entries yet, just sleep - it still handles new entries
 			// and stop requests.
-			timer, stop = c.clock.Timer(c.clock.Now().Add(100000 * time.Hour))
+			c.timeNext = c.clock.Now().Add(100000 * time.Hour)
 		} else {
-			timer, stop = c.clock.Timer(c.entries[0].Next)
+			c.timeNext = c.entries[0].Next
+		}
+		c.timer = c.clock.Timer(c.timeNext)
+		if c.timeWaiter != nil {
+			// release after new timer is settled
+			c.timeWaiter.Done()
 		}
 
 		for {
 			select {
-			case <-timer:
-				now = c.clock.Now()
+			case now := <-c.timer.Chan():
+				c.clock.SetTime(now)
 				c.logger.Debug("scheduler woke up", "event", "wake", "now", now)
 
 				// Run every entry whose next time was less than now
@@ -232,7 +238,7 @@ func (c *Cron) run() {
 				}
 
 			case newEntry := <-c.add:
-				stop()
+				c.timer.Stop()
 				now = c.clock.Now()
 				newEntry.Next = newEntry.Schedule.Next(now)
 				heap.Push(&c.entries, newEntry)
@@ -243,18 +249,41 @@ func (c *Cron) run() {
 				continue
 
 			case <-c.stop:
-				stop()
+				c.timer.Stop()
 				c.logger.Info("stopping scheduler", "event", "stop")
 				return
 
 			case id := <-c.remove:
-				stop()
+				c.timer.Stop()
 				c.removeEntry(id)
 			}
 
 			break
 		}
 	}
+}
+
+func (c *Cron) RunTo(t time.Time) {
+	if !c.clock.SetTime(c.clock.Now()) {
+		panic("clock does not support time travel")
+	}
+	c.timeWaiter = &sync.WaitGroup{}
+	if c.timer == nil {
+		c.timeWaiter.Add(1)
+		c.timeWaiter.Wait()
+	}
+	ft, ok := c.timer.(FireableTimer)
+	if !ok {
+		panic("timer does not support time travel")
+	}
+	for c.timeNext.Before(t) {
+		c.logger.Debug("try fire timer", "at", c.timeNext.String())
+		c.timeWaiter.Add(1)
+		ft.Fire()
+		c.timeWaiter.Wait()
+		ft = c.timer.(FireableTimer)
+	}
+	c.timeWaiter = nil
 }
 
 // startJob runs the given job in a new goroutine.

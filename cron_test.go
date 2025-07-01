@@ -831,3 +831,17 @@ func must[T any](val T, err error) T {
 	}
 	return val
 }
+
+func TestRunTo(t *testing.T) {
+	clock := NewFakeClock(time.UTC, time.Now())
+	c := New(WithParser(secondParser), WithClock(clock), WithSeconds())
+	c.Add("0 0 * * * *", func() {
+		t.Logf("fake job at %v", clock.Now())
+	})
+	endTime := clock.Now().Add(time.Hour * 24)
+	t.Logf("start cron at %v, runTo %v", clock.Now(), endTime)
+	c.Start()
+	defer c.Stop()
+
+	c.RunTo(endTime)
+}
