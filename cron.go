@@ -204,6 +204,8 @@ func (c *Cron) run() {
 	}
 	heap.Init(&c.entries)
 
+	timeMayChange := false
+
 	for {
 		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
 			// If there are no entries yet, just sleep - it still handles new entries
@@ -221,7 +223,11 @@ func (c *Cron) run() {
 		for {
 			select {
 			case now := <-c.timer.Chan():
-				c.clock.SetTime(now)
+				if timeMayChange {
+					// Wait for all jobs in the previous round to complete
+					c.jobWaiter.Wait()
+				}
+				timeMayChange = c.clock.SetTime(now)
 				c.logger.Debug("scheduler woke up", "event", "wake", "now", now)
 
 				// Run every entry whose next time was less than now
