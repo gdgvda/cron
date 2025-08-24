@@ -34,7 +34,7 @@ A cron expression represents a set of times, using 5 space-separated fields.
 	Hours        | Yes        | 0-23            | * / , -
 	Day of month | Yes        | 1-31            | * / , - ? L W
 	Month        | Yes        | 1-12 or JAN-DEC | * / , -
-	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ? L
+	Day of week  | Yes        | 0-6 or SUN-SAT  | * / , - ? L #
 
 Month and Day-of-week field values are case insensitive.  "SUN", "Sun", and
 "sun" are equally accepted.
@@ -115,6 +115,12 @@ For example, given 19W dom, if the 19th is Saturday the expression would activat
 If the 19th is a Sunday instead, the expression would activate on Monday 20th.
 The W char looks for weekdays within the month boundaries. Given a 1W dom with the 1st being a Saturday,
 the expression would activate on Monday 3rd.
+Cannot be used with steps or ranges.
+
+Nth occurrence ( # )
+
+Nth occurence char can be used in day-of-week field and allows to specify an occurence of a specific dow within the month.
+For example, SUN#2 means the second Sunday of the month.
 Cannot be used with steps or ranges.
 
 # Predefined schedules
