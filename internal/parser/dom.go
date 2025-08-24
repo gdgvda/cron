@@ -56,6 +56,51 @@ func parseDom(expression string) (matcher.Matcher, error) {
 		}, nil
 	}
 
+	if strings.HasSuffix(lowAndHigh[0], "W") {
+		if len(lowAndHigh) > 1 || len(rangeAndStep) > 1 {
+			return nil, fmt.Errorf("%s: invalid expression", expression)
+		}
+		if lowAndHigh[0] == "LW" {
+			return func(t time.Time) bool {
+				lastDayOfCurrentMonth := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 1, -1)
+				if lastDayOfCurrentMonth.Weekday() == time.Sunday {
+					return t.Day() == lastDayOfCurrentMonth.Day()-2
+				}
+				if lastDayOfCurrentMonth.Weekday() == time.Saturday {
+					return t.Day() == lastDayOfCurrentMonth.Day()-1
+				}
+				return t.Day() == lastDayOfCurrentMonth.Day()
+			}, nil
+		}
+		dom, err := parseIntOrName(strings.TrimSuffix(lowAndHigh[0], "W"), domToInt)
+		if err != nil {
+			return nil, err
+		}
+		if dom < 1 || dom > 31 {
+			return nil, fmt.Errorf("%s: value %d out of valid range [1, 31]", expression, dom)
+		}
+		return func(t time.Time) bool {
+			lastDayOfCurrentMonth := uint(time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, 1, -1).Day())
+			if dom > lastDayOfCurrentMonth {
+				return false
+			}
+			preferred := time.Date(t.Year(), t.Month(), int(dom), 0, 0, 0, 0, t.Location())
+			if preferred.Weekday() == time.Saturday && dom == 1 {
+				return t.Day() == 3
+			}
+			if preferred.Weekday() == time.Saturday && dom != 1 {
+				return t.Day() == int(dom)-1
+			}
+			if preferred.Weekday() == time.Sunday && dom == lastDayOfCurrentMonth {
+				return t.Day() == int(dom)-2
+			}
+			if preferred.Weekday() == time.Sunday && dom != lastDayOfCurrentMonth {
+				return t.Day() == int(dom)+1
+			}
+			return t.Day() == preferred.Day()
+		}, nil
+	}
+
 	if lowAndHigh[0] == "*" || lowAndHigh[0] == "?" {
 		if len(lowAndHigh) > 1 {
 			return nil, fmt.Errorf("%s: invalid expression", expression)
