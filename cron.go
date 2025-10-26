@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+type insertion struct {
+	entry *Entry
+	done  chan struct{}
+}
+
+type removal struct {
+	id   ID
+	done chan struct{}
+}
+
 // Cron keeps track of any number of entries, invoking the associated func as
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
@@ -16,8 +26,8 @@ type Cron struct {
 	entries   entryHeap
 	chain     Chain
 	stop      chan struct{}
-	add       chan *Entry
-	remove    chan ID
+	add       chan insertion
+	remove    chan removal
 	snapshot  chan chan []Entry
 	running   bool
 	logger    *slog.Logger
@@ -79,10 +89,10 @@ func New(opts ...Option) *Cron {
 	c := &Cron{
 		entries:   entryHeap{},
 		chain:     NewChain(),
-		add:       make(chan *Entry),
+		add:       make(chan insertion),
 		stop:      make(chan struct{}),
 		snapshot:  make(chan chan []Entry),
-		remove:    make(chan ID),
+		remove:    make(chan removal),
 		running:   false,
 		runningMu: sync.Mutex{},
 		logger:    slog.Default(),
@@ -127,7 +137,9 @@ func (c *Cron) Schedule(schedule Schedule, cmd func()) (ID, error) {
 	if !c.running {
 		c.entries = append(c.entries, entry)
 	} else {
-		c.add <- entry
+		done := make(chan struct{})
+		c.add <- insertion{entry: entry, done: done}
+		<-done
 	}
 	return entry.ID, nil
 }
@@ -164,7 +176,9 @@ func (c *Cron) Remove(id ID) {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
 	if c.running {
-		c.remove <- id
+		done := make(chan struct{})
+		c.remove <- removal{id: id, done: done}
+		<-done
 	} else {
 		c.removeEntry(id)
 	}
@@ -235,12 +249,14 @@ func (c *Cron) run() {
 					e.logger.Info("starting job", "event", "run", "now", now, "next", e.Next)
 				}
 
-			case newEntry := <-c.add:
+			case insertion := <-c.add:
 				timer.Stop()
 				now = c.now()
-				newEntry.Next = newEntry.Schedule.Next(now)
-				heap.Push(&c.entries, newEntry)
-				newEntry.logger.Info("added new entry", "event", "add", "now", now, "next", newEntry.Next)
+				entry := insertion.entry
+				entry.Next = entry.Schedule.Next(now)
+				heap.Push(&c.entries, entry)
+				entry.logger.Info("added new entry", "event", "add", "now", now, "next", entry.Next)
+				insertion.done <- struct{}{}
 
 			case replyChan := <-c.snapshot:
 				replyChan <- c.entrySnapshot()
@@ -251,10 +267,11 @@ func (c *Cron) run() {
 				c.logger.Info("stopping scheduler", "event", "stop")
 				return
 
-			case id := <-c.remove:
+			case removal := <-c.remove:
 				timer.Stop()
 				now = c.now()
-				c.removeEntry(id)
+				c.removeEntry(removal.id)
+				removal.done <- struct{}{}
 			}
 
 			break
