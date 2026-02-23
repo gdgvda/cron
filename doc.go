@@ -216,25 +216,19 @@ not be run!
 
 # Job Wrappers
 
-A Cron runner may be configured with a chain of job wrappers to add
-cross-cutting functionality to all submitted jobs. For example, they may be used
-to achieve the following effects:
+A Cron runner may be configured to control how overlapping executions of the
+same job are handled. For example:
 
-  - Delay a job's execution if the previous run hasn't completed yet
   - Skip a job's execution if the previous run hasn't completed yet
-  - Log each job's invocations
+  - Delay (queue) a job's execution until the previous run has completed
 
-Install wrappers for all jobs added to a cron using the `cron.WithChain` option:
+Skip overlapping executions using the `cron.WithSkipIfRunning` option:
 
-	cron.New(cron.WithChain(
-		cron.SkipIfStillRunning(logger),
-	))
+	cron.New(cron.WithSkipIfRunning())
 
-Install wrappers for individual jobs by explicitly wrapping them:
+Queue overlapping executions using the `cron.WithQueueIfStillRunning` option:
 
-	job = cron.NewChain(
-		cron.SkipIfStillRunning(logger),
-	).Then(job)
+	cron.New(cron.WithQueueIfStillRunning())
 
 # Thread safety
 
