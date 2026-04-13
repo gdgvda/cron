@@ -13,11 +13,18 @@ type specSchedule struct {
 
 	// Override location for this schedule.
 	Location *time.Location
+
+	// Constant delay mode when not zero
+	delay time.Duration
 }
 
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
 func (s *specSchedule) Next(t time.Time) time.Time {
+	if s.delay != 0 {
+		return t.Add(s.delay - time.Duration(t.Nanosecond())*time.Nanosecond)
+	}
+
 	// General approach
 	//
 	// For Month, Day, Hour, Minute, Second:

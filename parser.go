@@ -297,3 +297,14 @@ func create(second, minute, hour, dom, month, dow string, location *time.Locatio
 		Location:    location,
 	}, nil
 }
+
+// every returns a crontab Schedule that activates once every duration.
+// Delays that are less than on second or not a multiple of a second will return an error.
+func every(duration time.Duration) (Schedule, error) {
+	if duration < time.Second {
+		return nil, fmt.Errorf("delay must be at least one second but was %s", duration.String())
+	} else if duration%time.Second != 0 {
+		return nil, fmt.Errorf("delay must be a multiple of one second but was %s", duration.String())
+	}
+	return &specSchedule{delay: duration}, nil
+}
