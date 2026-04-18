@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-func TestWithParser(t *testing.T) {
-	var parser = NewParser(Dow)
-	c := New(WithParser(parser))
-	if c.parser != parser {
-		t.Error("expected provided parser")
-	}
-}
-
 func TestWithClock(t *testing.T) {
 	clock := NewDefaultClock(time.UTC, DefaultNopTimer)
 	c := New(WithClock(clock))
@@ -31,7 +23,11 @@ func TestWithVerboseLogger(t *testing.T) {
 		t.Error("expected provided logger")
 	}
 
-	_, err := c.Add("@every 1s", func() {})
+	sched, err := ParseStandard("@every 1s")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = c.Schedule(sched, func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -55,7 +51,11 @@ func TestWithOnCycleCompleted(t *testing.T) {
 	}
 	c := New(WithOnCycleCompleted(f))
 
-	_, err := c.Add("@every 1s", func() {
+	sched, err := ParseStandard("@every 1s")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = c.Schedule(sched, func() {
 		_, err := buf.Write([]byte{'1'})
 		if err != nil {
 			t.Error("non-nil error")
@@ -64,7 +64,7 @@ func TestWithOnCycleCompleted(t *testing.T) {
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = c.Add("@every 1s", func() {
+	_, err = c.Schedule(sched, func() {
 		_, err := buf.Write([]byte{'2'})
 		if err != nil {
 			t.Error("non-nil error")

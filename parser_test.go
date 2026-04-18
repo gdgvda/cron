@@ -8,8 +8,8 @@ import (
 	"unicode"
 )
 
-var secondParser = NewParser(Second | Minute | Hour | Dom | Month | DowOptional | Descriptor)
-var optionalSecondParser = NewParser(SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor)
+var secondParser, _ = NewDefaultParser(Second | Minute | Hour | Dom | Month | DowOptional | Descriptor)
+var optionalSecondParser, _ = NewDefaultParser(SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor)
 
 func TestParseScheduleErrors(t *testing.T) {
 	var tests = []struct{ expr, err string }{
@@ -42,7 +42,7 @@ func TestParseSchedule(t *testing.T) {
 	layout := time.RFC3339
 	entries := []struct {
 		now      string
-		parser   Parser
+		parser   *DefaultParser
 		expr     string
 		expected string
 	}{
@@ -250,8 +250,11 @@ func TestStandardSpecSchedule(t *testing.T) {
 }
 
 func TestNoDescriptorParser(t *testing.T) {
-	parser := NewParser(Minute | Hour)
-	_, err := parser.Parse("@every 1m")
+	parser, err := NewDefaultParser(Minute | Hour)
+	if err != nil {
+		t.Errorf("non-nil error")
+	}
+	_, err = parser.Parse("@every 1m")
 	if err == nil {
 		t.Error("expected an error, got none")
 	}
