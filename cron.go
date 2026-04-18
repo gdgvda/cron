@@ -25,7 +25,7 @@ type removal struct {
 // be inspected while running.
 type Cron struct {
 	entries          entryHeap
-	chain            Chain
+	overlap          func(func(), *slog.Logger) func()
 	stop             chan struct{}
 	add              chan insertion
 	remove           chan removal
@@ -90,7 +90,7 @@ type Entry struct {
 func New(opts ...Option) *Cron {
 	c := &Cron{
 		entries:          entryHeap{},
-		chain:            NewChain(),
+		overlap:          func(cmd func(), logger *slog.Logger) func() { return cmd },
 		add:              make(chan insertion),
 		stop:             make(chan struct{}),
 		snapshot:         make(chan chan []Entry),
@@ -130,11 +130,12 @@ func (c *Cron) Schedule(schedule Schedule, cmd func()) (ID, error) {
 		return 0, fmt.Errorf("run out of available ids")
 	}
 
+	logger := c.logger.With("id", c.next)
 	entry := &Entry{
 		ID:       c.next,
 		Schedule: schedule,
-		job:      c.chain.Then(cmd),
-		logger:   c.logger.With("id", c.next),
+		job:      c.overlap(cmd, logger),
+		logger:   logger,
 	}
 	c.next++
 	if !c.running {

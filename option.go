@@ -2,6 +2,8 @@ package cron
 
 import (
 	"log/slog"
+	"sync"
+	"time"
 )
 
 // Option represents a modification to the default behavior of a Cron.
@@ -19,14 +21,6 @@ func WithSeconds() Option {
 func WithParser(p Parser) Option {
 	return func(c *Cron) {
 		c.parser = p
-	}
-}
-
-// WithChain specifies Job wrappers to apply to all jobs added to this cron.
-// Refer to the Chain* functions in this package for provided wrappers.
-func WithChain(wrappers ...JobWrapper) Option {
-	return func(c *Cron) {
-		c.chain = NewChain(wrappers...)
 	}
 }
 
@@ -52,5 +46,39 @@ func WithClock(clock Clock) Option {
 func WithOnCycleCompleted(f func()) Option {
 	return func(c *Cron) {
 		c.onCycleCompleted = append(c.onCycleCompleted, f)
+	}
+}
+
+func WithSkipIfRunning() Option {
+	return func(c *Cron) {
+		c.overlap = func(cmd func(), logger *slog.Logger) func() {
+			var ch = make(chan struct{}, 1)
+			ch <- struct{}{}
+			return func() {
+				select {
+				case v := <-ch:
+					defer func() { ch <- v }()
+				default:
+					logger.Info("job execution skipped", "event", "skip")
+				}
+			}
+		}
+	}
+}
+
+func WithQueueIfStillRunning() Option {
+	return func(c *Cron) {
+		c.overlap = func(cmd func(), logger *slog.Logger) func() {
+			var mu sync.Mutex
+			return func() {
+				start := time.Now()
+				mu.Lock()
+				defer mu.Unlock()
+				if dur := time.Since(start); dur > time.Minute {
+					logger.Info("job execution delayed", "event", "delay", "duration", dur)
+				}
+				cmd()
+			}
+		}
 	}
 }
