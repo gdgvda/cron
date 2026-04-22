@@ -6,6 +6,13 @@ import (
 	"github.com/gdgvda/cron/internal/matcher"
 )
 
+// Schedule describes a job's duty cycle.
+type Schedule interface {
+	// Next returns the next activation time, later than the given time.
+	// Next is invoked initially, and then each time the job is run.
+	Next(time.Time) time.Time
+}
+
 // Specifies a duty cycle (to the second granularity), based on a
 // traditional crontab specification.
 type DefaultSchedule struct {
