@@ -42,10 +42,14 @@ func TestPanicRecovery(t *testing.T) {
 	handler := slog.NewJSONHandler(&buf, nil)
 	logger := slog.New(handler)
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock), WithLogger(logger))
+	cron := New(WithClock(clock), WithLogger(logger))
 	cron.Start()
 	defer cron.Stop()
-	_, err := cron.Add("* * * * * ?", func() {
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {
 		panic("YOLO")
 	})
 	if err != nil {
@@ -60,7 +64,7 @@ func TestPanicRecovery(t *testing.T) {
 
 // Start and stop cron with no entries.
 func TestNoEntries(t *testing.T) {
-	cron := New(WithParser(secondParser))
+	cron := New()
 	cron.Start()
 
 	select {
@@ -75,10 +79,14 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron := New(WithParser(secondParser))
+	cron := New()
 	cron.Start()
 	cron.Stop()
-	_, err := cron.Add("* * * * * ?", func() { wg.Done() })
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { wg.Done() })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -95,8 +103,12 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 func TestAddBeforeRunning(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("* * * * * ?", func() { executed = true })
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { executed = true })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -113,10 +125,14 @@ func TestAddBeforeRunning(t *testing.T) {
 func TestAddWhileRunning(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
+	cron := New(WithClock(clock))
 	cron.Start()
 	defer cron.Stop()
-	_, err := cron.Add("* * * * * ?", func() { executed = true })
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { executed = true })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -130,12 +146,16 @@ func TestAddWhileRunning(t *testing.T) {
 // Test for #34. Adding a job after calling start results in multiple job invocations
 func TestAddWhileRunningWithDelay(t *testing.T) {
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
+	cron := New(WithClock(clock))
 	cron.Start()
 	defer cron.Stop()
 	clock.AdvanceBy(5 * time.Second)
 	var calls int64
-	_, err := cron.Add("* * * * * *", func() { atomic.AddInt64(&calls, 1) })
+	sched, err := secondParser.Parse("* * * * * *")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { atomic.AddInt64(&calls, 1) })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -150,8 +170,12 @@ func TestAddWhileRunningWithDelay(t *testing.T) {
 func TestRemoveBeforeRunning(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	id, _ := cron.Add("* * * * * ?", func() { executed = true })
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	id, _ := cron.Schedule(sched, func() { executed = true })
 	cron.Remove(id)
 	cron.Start()
 	defer cron.Stop()
@@ -166,10 +190,14 @@ func TestRemoveBeforeRunning(t *testing.T) {
 func TestRemoveWhileRunning(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
+	cron := New(WithClock(clock))
 	cron.Start()
 	defer cron.Stop()
-	id, _ := cron.Add("* * * * * ?", func() { executed = true })
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	id, _ := cron.Schedule(sched, func() { executed = true })
 	cron.Remove(id)
 
 	clock.AdvanceBy(time.Second)
@@ -183,7 +211,11 @@ func TestSnapshotEntries(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
 	cron := New(WithClock(clock))
-	_, err := cron.Add("@every 2s", func() { executed = true })
+	sched, err := ParseStandard("@every 2s")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { executed = true })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -208,22 +240,34 @@ func TestSnapshotEntries(t *testing.T) {
 func TestMultipleEntries(t *testing.T) {
 	counter := atomic.Uint32{}
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("0 0 0 1 1 ?", func() {})
+	cron := New(WithClock(clock))
+	sched1, err := secondParser.Parse("0 0 0 1 1 ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("* * * * * ?", func() { counter.Add(1) })
+	_, err = cron.Schedule(sched1, func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	id1, _ := cron.Add("* * * * * ?", func() { t.Fatal() })
-	id2, _ := cron.Add("* * * * * ?", func() { t.Fatal() })
-	_, err = cron.Add("0 0 0 31 12 ?", func() {})
+	sched2, err := secondParser.Parse("* * * * * ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("* * * * * ?", func() { counter.Add(1) })
+	_, err = cron.Schedule(sched2, func() { counter.Add(1) })
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	id1, _ := cron.Schedule(sched2, func() { t.Fatal() })
+	id2, _ := cron.Schedule(sched2, func() { t.Fatal() })
+	sched3, err := secondParser.Parse("0 0 0 31 12 ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched3, func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched2, func() { counter.Add(1) })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -243,16 +287,28 @@ func TestMultipleEntries(t *testing.T) {
 func TestRunningJobTwice(t *testing.T) {
 	counter := 0
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("0 0 0 1 1 ?", func() {})
+	cron := New(WithClock(clock))
+	sched1, err := secondParser.Parse("0 0 0 1 1 ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("0 0 0 31 12 ?", func() {})
+	_, err = cron.Schedule(sched1, func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("* * * * * ?", func() { counter += 1 })
+	sched2, err := secondParser.Parse("0 0 0 31 12 ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched2, func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched3, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched3, func() { counter += 1 })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -269,16 +325,28 @@ func TestRunningJobTwice(t *testing.T) {
 func TestRunningMultipleSchedules(t *testing.T) {
 	counter := atomic.Uint32{}
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("0 0 0 1 1 ?", func() {})
+	cron := New(WithClock(clock))
+	sched1, err := secondParser.Parse("0 0 0 1 1 ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("0 0 0 31 12 ?", func() {})
+	_, err = cron.Schedule(sched1, func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("* * * * * ?", func() { counter.Add(1) })
+	sched2, err := secondParser.Parse("0 0 0 31 12 ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched2, func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched3, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched3, func() { counter.Add(1) })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -309,7 +377,7 @@ func TestLocalTimezone(t *testing.T) {
 	counter := 0
 	now := time.Now()
 	clock := NewTimerSkippingInstantExecutionClock(now)
-	cron := New(WithParser(secondParser), WithClock(clock))
+	cron := New(WithClock(clock))
 	first := now.Add(time.Second)
 	firstSpec := fmt.Sprintf("%d %d %d %d %d ?",
 		first.Second(), first.Minute(), first.Hour(), first.Day(), first.Month())
@@ -317,11 +385,19 @@ func TestLocalTimezone(t *testing.T) {
 	secondSpec := fmt.Sprintf("%d %d %d %d %d ?",
 		second.Second(), second.Minute(), second.Hour(), second.Day(), second.Month())
 
-	_, err := cron.Add(firstSpec, func() { counter = 1 })
+	sched1, err := secondParser.Parse(firstSpec)
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add(secondSpec, func() { counter += 1 })
+	_, err = cron.Schedule(sched1, func() { counter = 1 })
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched2, err := secondParser.Parse(secondSpec)
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched2, func() { counter += 1 })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -348,7 +424,7 @@ func TestNonLocalTimezone(t *testing.T) {
 	// This calculation doesn't work in seconds 58 or 59.
 	// Take the easy way out and sleep.
 	clock := NewTimerSkippingInstantExecutionClock(now)
-	cron := New(WithParser(secondParser), WithClock(clock))
+	cron := New(WithClock(clock))
 	first := now.Add(time.Second)
 	firstSpec := fmt.Sprintf("%d %d %d %d %d ?",
 		first.Second(), first.Minute(), first.Hour(), first.Day(), first.Month())
@@ -356,11 +432,19 @@ func TestNonLocalTimezone(t *testing.T) {
 	secondSpec := fmt.Sprintf("%d %d %d %d %d ?",
 		second.Second(), second.Minute(), second.Hour(), second.Day(), second.Month())
 
-	_, err = cron.Add(firstSpec, func() { counter = 1 })
+	sched1, err := secondParser.Parse(firstSpec)
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add(secondSpec, func() { counter += 1 })
+	_, err = cron.Schedule(sched1, func() { counter = 1 })
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched2, err := secondParser.Parse(secondSpec)
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched2, func() { counter += 1 })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -395,22 +479,17 @@ func (t testJob) job() func() {
 	}
 }
 
-// Test that adding an invalid job spec returns an error
-func TestInvalidJobSpec(t *testing.T) {
-	cron := New()
-	_, err := cron.Add("this will not parse", nil)
-	if err == nil {
-		t.Errorf("expected an error with invalid spec, got nil")
-	}
-}
-
 // Test blocking run method behaves as Start()
 func TestBlockingRun(t *testing.T) {
 	executed := false
 
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("* * * * * ?", func() { executed = true })
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { executed = true })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -439,8 +518,12 @@ func TestBlockingRun(t *testing.T) {
 func TestStartNoop(t *testing.T) {
 	counter := 0
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("* * * * * ?", func() {
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {
 		counter += 1
 	})
 	if err != nil {
@@ -470,21 +553,41 @@ func TestJob(t *testing.T) {
 	counter := 0
 
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	job0, err := cron.Add("0 0 0 30 Feb ?", newTestJob(&counter, "job0").job())
+	cron := New(WithClock(clock))
+	sched0, err := secondParser.Parse("0 0 0 30 Feb ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job1, err := cron.Add("0 0 0 1 1 ?", newTestJob(&counter, "job1").job())
+	job0, err := cron.Schedule(sched0, newTestJob(&counter, "job0").job())
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job2, _ := cron.Add("* * * * * ?", newTestJob(&counter, "job2").job())
-	job3, err := cron.Add("1 0 0 1 1 ?", newTestJob(&counter, "job3").job())
+	sched1, err := secondParser.Parse("0 0 0 1 1 ?")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	job4, err := cron.Add("@every 5s", newTestJob(&counter, "job4").job())
+	job1, err := cron.Schedule(sched1, newTestJob(&counter, "job1").job())
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched2, err := secondParser.Parse("* * * * * ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	job2, _ := cron.Schedule(sched2, newTestJob(&counter, "job2").job())
+	sched3, err := secondParser.Parse("1 0 0 1 1 ?")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	job3, err := cron.Schedule(sched3, newTestJob(&counter, "job3").job())
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	sched4, err := secondParser.Parse("@every 5s")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	job4, err := cron.Schedule(sched4, newTestJob(&counter, "job4").job())
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -532,7 +635,7 @@ func TestScheduleAfterRemoval(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
 
-	cron := New(WithParser(secondParser))
+	cron := New()
 	hourJob, err := cron.Schedule(must(every(time.Hour)), func() {})
 	if err != nil {
 		t.Error("non-nil error")
@@ -583,8 +686,12 @@ func (*ZeroSchedule) Next(time.Time) time.Time {
 func TestJobWithZeroTimeDoesNotRun(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithParser(secondParser), WithClock(clock))
-	_, err := cron.Add("* * * * * *", func() { executed = true })
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("* * * * * *")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() { executed = true })
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -602,7 +709,7 @@ func TestJobWithZeroTimeDoesNotRun(t *testing.T) {
 
 func TestStopAndWait(t *testing.T) {
 	t.Run("nothing running, returns immediately", func(t *testing.T) {
-		cron := New(WithParser(secondParser))
+		cron := New()
 		cron.Start()
 		ctx := cron.Stop()
 		select {
@@ -613,7 +720,7 @@ func TestStopAndWait(t *testing.T) {
 	})
 
 	t.Run("repeated calls to Stop", func(t *testing.T) {
-		cron := New(WithParser(secondParser))
+		cron := New()
 		cron.Start()
 		_ = cron.Stop()
 		time.Sleep(time.Millisecond)
@@ -626,21 +733,25 @@ func TestStopAndWait(t *testing.T) {
 	})
 
 	t.Run("a couple fast jobs added, still returns immediately", func(t *testing.T) {
-		cron := New(WithParser(secondParser))
-		_, err := cron.Add("* * * * * *", func() {})
+		cron := New()
+		sched, err := secondParser.Parse("* * * * * *")
+		if err != nil {
+			t.Error("non-nil error")
+		}
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
 		cron.Start()
-		_, err = cron.Add("* * * * * *", func() {})
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
-		_, err = cron.Add("* * * * * *", func() {})
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
-		_, err = cron.Add("* * * * * *", func() {})
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
@@ -654,17 +765,21 @@ func TestStopAndWait(t *testing.T) {
 	})
 
 	t.Run("a couple fast jobs and a slow job added, waits for slow job", func(t *testing.T) {
-		cron := New(WithParser(secondParser))
-		_, err := cron.Add("* * * * * *", func() {})
+		cron := New()
+		sched, err := secondParser.Parse("* * * * * *")
+		if err != nil {
+			t.Error("non-nil error")
+		}
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
 		cron.Start()
-		_, err = cron.Add("* * * * * *", func() { time.Sleep(2 * time.Second) })
+		_, err = cron.Schedule(sched, func() { time.Sleep(2 * time.Second) })
 		if err != nil {
 			t.Error("non-nil error")
 		}
-		_, err = cron.Add("* * * * * *", func() {})
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
@@ -690,17 +805,21 @@ func TestStopAndWait(t *testing.T) {
 	})
 
 	t.Run("repeated calls to stop, waiting for completion and after", func(t *testing.T) {
-		cron := New(WithParser(secondParser))
-		_, err := cron.Add("* * * * * *", func() {})
+		cron := New()
+		sched, err := secondParser.Parse("* * * * * *")
 		if err != nil {
 			t.Error("non-nil error")
 		}
-		_, err = cron.Add("* * * * * *", func() { time.Sleep(2 * time.Second) })
+		_, err = cron.Schedule(sched, func() {})
+		if err != nil {
+			t.Error("non-nil error")
+		}
+		_, err = cron.Schedule(sched, func() { time.Sleep(2 * time.Second) })
 		if err != nil {
 			t.Error("non-nil error")
 		}
 		cron.Start()
-		_, err = cron.Add("* * * * * *", func() {})
+		_, err = cron.Schedule(sched, func() {})
 		if err != nil {
 			t.Error("non-nil error")
 		}
@@ -757,11 +876,15 @@ func TestRunningOutOfIDs(t *testing.T) {
 	cron := New()
 	cron.next = ID(^uint(0))
 
-	_, err := cron.Add("* * * * *", func() {})
+	sched, err := ParseStandard("* * * * *")
 	if err != nil {
 		t.Error("non-nil error")
 	}
-	_, err = cron.Add("* * * * *", func() {})
+	_, err = cron.Schedule(sched, func() {})
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}

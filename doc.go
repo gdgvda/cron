@@ -1,23 +1,41 @@
 /*
 Package cron implements a cron spec parser and job runner.
 
+The library is organized into two primary components:
+
+  - Parser: parses cron specification strings into a Schedule. Custom parsers can be
+    created to support alternative formats.
+  - Scheduler: the Cron instance keeps track of jobs and executes them according to
+    their Schedule.
+
+This separation allows parsing schedules independently, reusing a single schedule
+for multiple jobs, or providing custom Schedule implementations directly to the scheduler.
+
 # Usage
 
 Callers may register funcs to be invoked on a given schedule. Cron will run
 them in their own goroutines.
 
 	c := cron.New()
-	c.Add("30 * * * *", func() { fmt.Println("Every hour on the half hour") })
-	c.Add("30 3-6,20-23 * * *", func() { fmt.Println(".. in the range 3-6am, 8-11pm") })
-	c.Add("CRON_TZ=Asia/Tokyo 30 04 * * *", func() { fmt.Println("Runs at 04:30 Tokyo time every day") })
-	c.Add("@hourly",      func() { fmt.Println("Every hour, starting an hour from now") })
-	c.Add("@every 1h30m", func() { fmt.Println("Every hour thirty, starting an hour thirty from now") })
+
+	sched, _ := cron.ParseStandard("30 * * * *")
+	c.Schedule(sched, func() { fmt.Println("Every hour on the half hour") })
+	sched, _ = cron.ParseStandard("30 3-6,20-23 * * *")
+	c.Schedule(sched, func() { fmt.Println(".. in the range 3-6am, 8-11pm") })
+	sched, _ = cron.ParseStandard("CRON_TZ=Asia/Tokyo 30 04 * * *")
+	c.Schedule(sched, func() { fmt.Println("Runs at 04:30 Tokyo time every day") })
+	sched, _ = cron.ParseStandard("@hourly")
+	c.Schedule(sched, func() { fmt.Println("Every hour, starting an hour from now") })
+	sched, _ = cron.ParseStandard("@every 1h30m")
+	c.Schedule(sched, func() { fmt.Println("Every hour thirty, starting an hour thirty from now") })
+
 	c.Start()
 	..
 	// Funcs are invoked in their own goroutine, asynchronously.
 	...
 	// Funcs may also be added to a running Cron
-	c.Add("@daily", func() { fmt.Println("Every day") })
+	sched, _ = cron.ParseStandard("@daily")
+	c.Schedule(sched, func() { fmt.Println("Every day") })
 	..
 	// Inspect the cron job entries' next and previous run times.
 	inspect(c.Entries())
@@ -44,22 +62,19 @@ https://en.wikipedia.org/wiki/Cron
 
 # Alternative Formats
 
-Alternative Cron expression formats support other fields like seconds. You can
-implement that by creating a custom Parser as follows.
+Alternative Cron expression formats support other fields like seconds. This
+can be implemented by creating a custom Parser to generate a Schedule:
 
-	cron.New(
-		cron.WithParser(
-			cron.NewParser(
-				cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)))
+	parser, _ := cron.NewDefaultParser(
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	sched, _ := parser.Parse("* * * * * *")
 
-Since adding Seconds is the most common modification to the standard cron spec,
-cron provides a builtin function to do that, which is equivalent to the custom
-parser you saw earlier, except that its seconds field is REQUIRED:
-
-	cron.New(cron.WithSeconds())
-
-That emulates Quartz, the most popular alternative Cron schedule format:
+To emulate Quartz, the most popular alternative Cron schedule format, the
+seconds field can be required:
 http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html
+
+	parser, _ := cron.NewDefaultParser(
+		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
 # Special Characters
 
@@ -125,7 +140,7 @@ Cannot be used with steps or ranges.
 
 # Predefined schedules
 
-You may use one of several pre-defined schedules in place of a cron expression.
+One of several pre-defined schedules may be used in place of a cron expression.
 
 	Entry                  | Description                                | Equivalent To
 	-----                  | -----------                                | -------------
@@ -137,7 +152,7 @@ You may use one of several pre-defined schedules in place of a cron expression.
 
 # Intervals
 
-You may also schedule a job to execute at fixed intervals, starting at the time it's added
+Jobs may also be scheduled to execute at fixed intervals, starting at the time they are added
 or cron is run. This is supported by formatting the cron spec like this:
 
 	@every <duration>
@@ -169,20 +184,18 @@ of the cron spec, of the form "CRON_TZ=Asia/Tokyo".
 For example:
 
 	# Runs at 6am in time.Local
-	cron.New().Add("0 6 * * ?", ...)
+	sched, _ := cron.ParseStandard("0 6 * * ?")
+	cron.New().Schedule(sched, ...)
 
 	# Runs at 6am in America/New_York
 	nyc, _ := time.LoadLocation("America/New_York")
-	c := cron.New(cron.WithLocation(nyc))
-	c.Add("0 6 * * ?", ...)
+	c := cron.New(cron.WithClock(cron.NewDefaultClock(nyc, cron.DefaultNopTimer)))
+	sched, _ = cron.ParseStandard("0 6 * * ?")
+	c.Schedule(sched, ...)
 
 	# Runs at 6am in Asia/Tokyo
-	cron.New().Add("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
-
-	# Runs at 6am in Asia/Tokyo
-	c := cron.New(cron.WithLocation(nyc))
-	c.SetLocation("America/New_York")
-	c.Add("CRON_TZ=Asia/Tokyo 0 6 * * ?", ...)
+	sched, _ = cron.ParseStandard("CRON_TZ=Asia/Tokyo 0 6 * * ?")
+	cron.New().Schedule(sched, ...)
 
 The prefix "TZ=(TIME ZONE)" is also supported for legacy compatibility.
 

@@ -34,9 +34,13 @@ func TestRegister(t *testing.T) {
 func TestJobTriggeredAfterAdvancingOnce(t *testing.T) {
 	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithClock(clock), WithSeconds())
+	cron := New(WithClock(clock))
 	executed := false
-	_, err := cron.Add("1 0 12 * * *", func() {
+	sched, err := secondParser.Parse("1 0 12 * * *")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {
 		executed = true
 	})
 	if err != nil {
@@ -57,9 +61,13 @@ func TestJobTriggeredAfterAdvancingOnce(t *testing.T) {
 func TestJobTriggeredAfterAdvancingTwice(t *testing.T) {
 	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithClock(clock), WithSeconds())
+	cron := New(WithClock(clock))
 	executed := false
-	_, err := cron.Add("2 0 12 * * *", func() {
+	sched, err := secondParser.Parse("2 0 12 * * *")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {
 		executed = true
 	})
 	if err != nil {
@@ -84,7 +92,7 @@ func TestJobTriggeredAfterAdvancingTwice(t *testing.T) {
 func TestNoJobsRegistered(t *testing.T) {
 	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithClock(clock), WithSeconds())
+	cron := New(WithClock(clock))
 	cron.Start()
 	defer cron.Stop()
 	now := clock.Now()
@@ -102,8 +110,12 @@ func TestNoJobsRegistered(t *testing.T) {
 func TestNoJobsInBetween(t *testing.T) {
 	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingInstantExecutionClock(start)
-	cron := New(WithClock(clock), WithSeconds())
-	_, err := cron.Add("0 0 20 * * *", func() {})
+	cron := New(WithClock(clock))
+	sched, err := secondParser.Parse("0 0 20 * * *")
+	if err != nil {
+		t.Error("non-nil error")
+	}
+	_, err = cron.Schedule(sched, func() {})
 	if err != nil {
 		t.Error("non-nil error")
 	}

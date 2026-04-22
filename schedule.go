@@ -6,13 +6,20 @@ import (
 	"github.com/gdgvda/cron/internal/matcher"
 )
 
+// Schedule describes a job's duty cycle.
+type Schedule interface {
+	// Next returns the next activation time, later than the given time.
+	// Next is invoked initially, and then each time the job is run.
+	Next(time.Time) time.Time
+}
+
 // Specifies a duty cycle (to the second granularity), based on a
 // traditional crontab specification.
-type specSchedule struct {
-	SecondMatch, MinuteMatch, HourMatch, DayMatch, MonthMatch matcher.Matcher
+type DefaultSchedule struct {
+	secondMatch, minuteMatch, hourMatch, dayMatch, monthMatch matcher.Matcher
 
 	// Override location for this schedule.
-	Location *time.Location
+	location *time.Location
 
 	// Constant delay mode when not zero
 	delay time.Duration
@@ -20,7 +27,7 @@ type specSchedule struct {
 
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
-func (s *specSchedule) Next(t time.Time) time.Time {
+func (s *DefaultSchedule) Next(t time.Time) time.Time {
 	if s.delay != 0 {
 		return t.Add(s.delay - time.Duration(t.Nanosecond())*time.Nanosecond)
 	}
@@ -39,12 +46,12 @@ func (s *specSchedule) Next(t time.Time) time.Time {
 	// Note that schedules without a time zone specified (time.Local) are treated
 	// as local to the time provided.
 	origLocation := t.Location()
-	loc := s.Location
+	loc := s.location
 	if loc == time.Local {
 		loc = t.Location()
 	}
-	if s.Location != time.Local {
-		t = t.In(s.Location)
+	if s.location != time.Local {
+		t = t.In(s.location)
 	}
 
 	// Start at the earliest possible time (the upcoming second).
@@ -63,7 +70,7 @@ WRAP:
 
 	// Find the first applicable month.
 	// If it's this month, then do nothing.
-	for !s.MonthMatch(t) {
+	for !s.monthMatch(t) {
 		// If we have to add a month, reset the other parts to 0.
 		if !added {
 			added = true
@@ -83,7 +90,7 @@ WRAP:
 	// NOTE: This causes issues for daylight savings regimes where midnight does
 	// not exist.  For example: Sao Paulo has DST that transforms midnight on
 	// 11/3 into 1am. Handle that by noticing when the Hour ends up != 0.
-	for !s.DayMatch(t) {
+	for !s.dayMatch(t) {
 		if !added {
 			added = true
 			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
@@ -104,7 +111,7 @@ WRAP:
 		}
 	}
 
-	for !s.HourMatch(t) {
+	for !s.hourMatch(t) {
 		if !added {
 			added = true
 			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc)
@@ -116,7 +123,7 @@ WRAP:
 		}
 	}
 
-	for !s.MinuteMatch(t) {
+	for !s.minuteMatch(t) {
 		if !added {
 			added = true
 			t = t.Truncate(time.Minute)
@@ -128,7 +135,7 @@ WRAP:
 		}
 	}
 
-	for !s.SecondMatch(t) {
+	for !s.secondMatch(t) {
 		if !added {
 			added = true
 			t = t.Truncate(time.Second)

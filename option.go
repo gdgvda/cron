@@ -7,21 +7,6 @@ import (
 // Option represents a modification to the default behavior of a Cron.
 type Option func(*Cron)
 
-// WithSeconds overrides the parser used for interpreting job schedules to
-// include a seconds field as the first one.
-func WithSeconds() Option {
-	return WithParser(NewParser(
-		Second | Minute | Hour | Dom | Month | Dow | Descriptor,
-	))
-}
-
-// WithParser overrides the parser used for interpreting job schedules.
-func WithParser(p Parser) Option {
-	return func(c *Cron) {
-		c.parser = p
-	}
-}
-
 // WithChain specifies Job wrappers to apply to all jobs added to this cron.
 // Refer to the Chain* functions in this package for provided wrappers.
 func WithChain(wrappers ...JobWrapper) Option {

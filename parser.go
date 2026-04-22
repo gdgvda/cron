@@ -44,17 +44,12 @@ var defaults = []string{
 	"*",
 }
 
-// Parser is an interface for schedule spec parsers that return a Schedule
-type Parser interface {
-	Parse(spec string) (Schedule, error)
-}
-
-// A default defaultParser that can be configured.
-type defaultParser struct {
+// A default DefaultParser that can be configured.
+type DefaultParser struct {
 	options ParseOption
 }
 
-// NewParser creates a Parser with custom options.
+// NewDefaultParser creates a DefaultParser with custom options.
 //
 // It panics if more than one Optional is given, since it would be impossible to
 // correctly infer which optional is provided or missing in general.
@@ -62,17 +57,17 @@ type defaultParser struct {
 // Examples
 //
 //	// Standard parser without descriptors
-//	specParser := NewParser(Minute | Hour | Dom | Month | Dow)
+//	specParser, _ := NewDefaultParser(Minute | Hour | Dom | Month | Dow)
 //	sched, err := specParser.Parse("0 0 15 */3 *")
 //
 //	// Same as above, just excludes time fields
-//	specParser := NewParser(Dom | Month | Dow)
+//	specParser, _ := NewDefaultParser(Dom | Month | Dow)
 //	sched, err := specParser.Parse("15 */3 *")
 //
 //	// Same as above, just makes Dow optional
-//	specParser := NewParser(Dom | Month | DowOptional)
+//	specParser, _ := NewDefaultParser(Dom | Month | DowOptional)
 //	sched, err := specParser.Parse("15 */3")
-func NewParser(options ParseOption) Parser {
+func NewDefaultParser(options ParseOption) (*DefaultParser, error) {
 	optionals := 0
 	if options&DowOptional > 0 {
 		optionals++
@@ -81,15 +76,15 @@ func NewParser(options ParseOption) Parser {
 		optionals++
 	}
 	if optionals > 1 {
-		panic("multiple optionals may not be configured")
+		return nil, fmt.Errorf("multiple optionals may not be configured")
 	}
-	return defaultParser{options}
+	return &DefaultParser{options}, nil
 }
 
 // Parse returns a new crontab schedule representing the given spec.
 // It returns a descriptive error if the spec is not valid.
-// It accepts crontab specs and features configured by NewParser.
-func (p defaultParser) Parse(spec string) (Schedule, error) {
+// It accepts crontab specs and features configured by NewDefaultParser.
+func (p *DefaultParser) Parse(spec string) (*DefaultSchedule, error) {
 	if len(spec) == 0 {
 		return nil, fmt.Errorf("empty spec string")
 	}
@@ -148,13 +143,13 @@ func (p defaultParser) Parse(spec string) (Schedule, error) {
 		return nil, err
 	}
 
-	return &specSchedule{
-		SecondMatch: second,
-		MinuteMatch: minute,
-		HourMatch:   hour,
-		DayMatch:    day,
-		MonthMatch:  month,
-		Location:    loc,
+	return &DefaultSchedule{
+		secondMatch: second,
+		minuteMatch: minute,
+		hourMatch:   hour,
+		dayMatch:    day,
+		monthMatch:  month,
+		location:    loc,
 	}, nil
 }
 
@@ -220,7 +215,7 @@ func normalizeFields(fields []string, options ParseOption) ([]string, error) {
 	return expandedFields, nil
 }
 
-var standardParser = NewParser(
+var standardParser, _ = NewDefaultParser(
 	Minute | Hour | Dom | Month | Dow | Descriptor,
 )
 
@@ -237,7 +232,7 @@ func ParseStandard(standardSpec string) (Schedule, error) {
 }
 
 // parseDescriptor returns a predefined schedule for the expression, or error if none matches.
-func parseDescriptor(descriptor string, loc *time.Location) (Schedule, error) {
+func parseDescriptor(descriptor string, loc *time.Location) (*DefaultSchedule, error) {
 	switch descriptor {
 	case "@yearly", "@annually":
 		return create("0", "0", "0", "1", "1", "*", loc)
@@ -267,7 +262,7 @@ func parseDescriptor(descriptor string, loc *time.Location) (Schedule, error) {
 	return nil, fmt.Errorf("unrecognized descriptor: %s", descriptor)
 }
 
-func create(second, minute, hour, dom, month, dow string, location *time.Location) (*specSchedule, error) {
+func create(second, minute, hour, dom, month, dow string, location *time.Location) (*DefaultSchedule, error) {
 	secondMatch, err := parser.ParseSecond(second)
 	if err != nil {
 		return nil, err
@@ -288,23 +283,23 @@ func create(second, minute, hour, dom, month, dow string, location *time.Locatio
 	if err != nil {
 		return nil, err
 	}
-	return &specSchedule{
-		SecondMatch: secondMatch,
-		MinuteMatch: minuteMatch,
-		HourMatch:   hourMatch,
-		DayMatch:    dayMatch,
-		MonthMatch:  monthMatch,
-		Location:    location,
+	return &DefaultSchedule{
+		secondMatch: secondMatch,
+		minuteMatch: minuteMatch,
+		hourMatch:   hourMatch,
+		dayMatch:    dayMatch,
+		monthMatch:  monthMatch,
+		location:    location,
 	}, nil
 }
 
 // every returns a crontab Schedule that activates once every duration.
 // Delays that are less than on second or not a multiple of a second will return an error.
-func every(duration time.Duration) (Schedule, error) {
+func every(duration time.Duration) (*DefaultSchedule, error) {
 	if duration < time.Second {
 		return nil, fmt.Errorf("delay must be at least one second but was %s", duration.String())
 	} else if duration%time.Second != 0 {
 		return nil, fmt.Errorf("delay must be a multiple of one second but was %s", duration.String())
 	}
-	return &specSchedule{delay: duration}, nil
+	return &DefaultSchedule{delay: duration}, nil
 }

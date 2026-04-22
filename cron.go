@@ -33,18 +33,10 @@ type Cron struct {
 	running          bool
 	logger           *slog.Logger
 	runningMu        sync.Mutex
-	parser           Parser
 	next             ID
 	jobWaiter        sync.WaitGroup
 	clock            Clock
 	onCycleCompleted []func()
-}
-
-// Schedule describes a job's duty cycle.
-type Schedule interface {
-	// Next returns the next activation time, later than the given time.
-	// Next is invoked initially, and then each time the job is run.
-	Next(time.Time) time.Time
 }
 
 // ID identifies an entry within a Cron instance
@@ -71,22 +63,6 @@ type Entry struct {
 }
 
 // New returns a new Cron job runner, modified by the given options.
-//
-// Available Settings
-//
-//	Time Zone
-//	  Description: The time zone in which schedules are interpreted
-//	  Default:     time.Local
-//
-//	Parser
-//	  Description: Parser converts cron spec strings into cron.Schedules.
-//	  Default:     Accepts this spec: https://en.wikipedia.org/wiki/Cron
-//
-//	Chain
-//	  Description: Wrap submitted jobs to customize behavior.
-//	  Default:     A chain that recovers panics and logs them to stderr.
-//
-// See "cron.With*" to modify the default behavior.
 func New(opts ...Option) *Cron {
 	c := &Cron{
 		entries:          entryHeap{},
@@ -98,7 +74,6 @@ func New(opts ...Option) *Cron {
 		running:          false,
 		runningMu:        sync.Mutex{},
 		logger:           slog.Default(),
-		parser:           standardParser,
 		next:             1,
 		clock:            NewDefaultClock(time.Local, DefaultNopTimer),
 		onCycleCompleted: []func(){},
@@ -107,17 +82,6 @@ func New(opts ...Option) *Cron {
 		opt(c)
 	}
 	return c
-}
-
-// Add adds a job to the Cron to be run on the given schedule.
-// The spec is parsed using the time zone of this Cron instance as the default.
-// An opaque ID is returned that can be used to later remove it.
-func (c *Cron) Add(spec string, cmd func()) (ID, error) {
-	schedule, err := c.parser.Parse(spec)
-	if err != nil {
-		return 0, err
-	}
-	return c.Schedule(schedule, cmd)
 }
 
 // Schedule adds a job to the Cron to be run on the given schedule.
