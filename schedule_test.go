@@ -65,7 +65,7 @@ func TestActivation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("now=%s,spec=%s", test.time, strings.Replace(test.spec, "/", "|", -1)), func(t *testing.T) {
-			sched, err := ParseStandard(test.spec)
+			sched, err := standardParser.Parse(test.spec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -228,7 +228,7 @@ func TestErrors(t *testing.T) {
 	}
 	for _, spec := range invalidSpecs {
 		t.Run(strings.Replace(spec, "/", "|", -1), func(t *testing.T) {
-			_, err := ParseStandard(spec)
+			_, err := standardParser.Parse(spec)
 			if err == nil {
 				t.Fatal("expected an error parsing: ", spec)
 			}
@@ -282,7 +282,7 @@ func TestNextWithTz(t *testing.T) {
 	}
 	for _, c := range runs {
 		t.Run(fmt.Sprintf("now=%s,spec=%s", c.time, strings.Replace(c.spec, "/", "|", -1)), func(t *testing.T) {
-			sched, err := ParseStandard(c.spec)
+			sched, err := standardParser.Parse(c.spec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -316,7 +316,7 @@ func getTimeTZ(value string) time.Time {
 // https://github.com/robfig/cron/issues/144
 func TestSlash0NoHang(t *testing.T) {
 	schedule := "TZ=America/New_York 15/0 * * * *"
-	_, err := ParseStandard(schedule)
+	_, err := standardParser.Parse(schedule)
 	if err == nil {
 		t.Fatal("expected an error on 0 increment")
 	}

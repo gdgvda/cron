@@ -17,16 +17,17 @@ Callers may register funcs to be invoked on a given schedule. Cron will run
 them in their own goroutines.
 
 	c := cron.New()
+	parser, _ := cron.NewDefaultParser(cron.StandardOptions)
 
-	sched, _ := cron.ParseStandard("30 * * * *")
+	sched, _ := parser.Parse("30 * * * *")
 	c.Schedule(sched, func() { fmt.Println("Every hour on the half hour") })
-	sched, _ = cron.ParseStandard("30 3-6,20-23 * * *")
+	sched, _ = parser.Parse("30 3-6,20-23 * * *")
 	c.Schedule(sched, func() { fmt.Println(".. in the range 3-6am, 8-11pm") })
-	sched, _ = cron.ParseStandard("CRON_TZ=Asia/Tokyo 30 04 * * *")
+	sched, _ = parser.Parse("CRON_TZ=Asia/Tokyo 30 04 * * *")
 	c.Schedule(sched, func() { fmt.Println("Runs at 04:30 Tokyo time every day") })
-	sched, _ = cron.ParseStandard("@hourly")
+	sched, _ = parser.Parse("@hourly")
 	c.Schedule(sched, func() { fmt.Println("Every hour, starting an hour from now") })
-	sched, _ = cron.ParseStandard("@every 1h30m")
+	sched, _ = parser.Parse("@every 1h30m")
 	c.Schedule(sched, func() { fmt.Println("Every hour thirty, starting an hour thirty from now") })
 
 	c.Start()
@@ -34,7 +35,7 @@ them in their own goroutines.
 	// Funcs are invoked in their own goroutine, asynchronously.
 	...
 	// Funcs may also be added to a running Cron
-	sched, _ = cron.ParseStandard("@daily")
+	sched, _ = parser.Parse("@daily")
 	c.Schedule(sched, func() { fmt.Println("Every day") })
 	..
 	// Inspect the cron job entries' next and previous run times.
@@ -184,17 +185,18 @@ of the cron spec, of the form "CRON_TZ=Asia/Tokyo".
 For example:
 
 	# Runs at 6am in time.Local
-	sched, _ := cron.ParseStandard("0 6 * * ?")
+	parser, _ := cron.NewDefaultParser(cron.StandardOptions)
+	sched, _ := parser.Parse("0 6 * * ?")
 	cron.New().Schedule(sched, ...)
 
 	# Runs at 6am in America/New_York
 	nyc, _ := time.LoadLocation("America/New_York")
 	c := cron.New(cron.WithClock(cron.NewDefaultClock(nyc, cron.DefaultNopTimer)))
-	sched, _ = cron.ParseStandard("0 6 * * ?")
+	sched, _ = parser.Parse("0 6 * * ?")
 	c.Schedule(sched, ...)
 
 	# Runs at 6am in Asia/Tokyo
-	sched, _ = cron.ParseStandard("CRON_TZ=Asia/Tokyo 0 6 * * ?")
+	sched, _ = parser.Parse("CRON_TZ=Asia/Tokyo 0 6 * * ?")
 	cron.New().Schedule(sched, ...)
 
 The prefix "TZ=(TIME ZONE)" is also supported for legacy compatibility.

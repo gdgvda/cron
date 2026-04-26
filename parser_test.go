@@ -10,6 +10,7 @@ import (
 
 var secondParser, _ = NewDefaultParser(Second | Minute | Hour | Dom | Month | DowOptional | Descriptor)
 var optionalSecondParser, _ = NewDefaultParser(SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor)
+var standardParser, _ = NewDefaultParser(StandardOptions)
 
 func TestParseScheduleErrors(t *testing.T) {
 	var tests = []struct{ expr, err string }{
@@ -221,7 +222,7 @@ func TestStandardSpecSchedule(t *testing.T) {
 
 	for _, c := range entries {
 		t.Run(strings.Replace(c.expr, "/", "|", -1), func(t *testing.T) {
-			schedule, err := ParseStandard(c.expr)
+			schedule, err := standardParser.Parse(c.expr)
 			if len(c.err) != 0 && (err == nil || !strings.Contains(err.Error(), c.err)) {
 				t.Fatalf("%s => expected %v, got %v", c.expr, c.err, err)
 			}
@@ -361,7 +362,7 @@ func FuzzParser(f *testing.F) {
 		f.Add(v)
 	}
 	f.Fuzz(func(t *testing.T, schedule string) {
-		parsed, errStd := ParseStandard(schedule)
+		parsed, errStd := standardParser.Parse(schedule)
 		if errStd == nil {
 			sanityCheck(t, parsed, schedule, "standard parser")
 		}
