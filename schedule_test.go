@@ -321,3 +321,35 @@ func TestSlash0NoHang(t *testing.T) {
 		t.Fatal("expected an error on 0 increment")
 	}
 }
+
+func TestWithLocation(t *testing.T) {
+	sched, err := secondParser.Parse("CRON_TZ=UTC 0 0 12 * * ?")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2012, 7, 9, 0, 0, 0, 0, time.UTC)
+
+	next1 := sched.Next(now)
+	if expected := time.Date(2012, 7, 9, 12, 0, 0, 0, time.UTC); !next1.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, next1)
+	}
+
+	sched2 := sched.WithLocation(time.FixedZone("UTC+2", 2*60*60))
+	next2 := sched2.Next(now)
+	if expected := time.Date(2012, 7, 9, 10, 0, 0, 0, time.UTC); !next2.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, next2)
+	}
+}
+
+func TestWithLocationNil(t *testing.T) {
+	sched, err := secondParser.Parse("0 0 12 * * ?")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sched2 := sched.WithLocation(nil)
+	if sched2 != sched {
+		t.Fatalf("expected nil location to return same schedule")
+	}
+}

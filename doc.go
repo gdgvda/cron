@@ -201,6 +201,12 @@ For example:
 
 The prefix "TZ=(TIME ZONE)" is also supported for legacy compatibility.
 
+A schedule's timezone can be modified programmatically using the [DefaultSchedule.WithLocation] method:
+
+	sched, _ = parser.Parse("0 6 * * ?")
+	nycSched := sched.WithLocation(nyc)
+	cron.New().Schedule(nycSched, ...)
+
 Be aware that jobs scheduled during daylight-savings leap-ahead transitions will
 not be run!
 
