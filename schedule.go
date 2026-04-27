@@ -149,3 +149,15 @@ WRAP:
 
 	return t.In(origLocation)
 }
+
+// WithLocation returns a copy of the schedule with the given location.
+// If the location is nil, it returns the original schedule.
+func (s *DefaultSchedule) WithLocation(l *time.Location) *DefaultSchedule {
+	if l == nil {
+		return s
+	}
+	s2 := new(DefaultSchedule)
+	*s2 = *s
+	s2.location = l
+	return s2
+}
