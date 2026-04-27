@@ -9,7 +9,7 @@ import (
 )
 
 var secondParser, _ = NewDefaultParser(Second | Minute | Hour | Dom | Month | DowOptional | Descriptor)
-var optionalSecondParser, _ = NewDefaultParser(SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor)
+var optionalSecondParser, _ = NewDefaultParser(SecondOptional | StandardOptions)
 var standardParser, _ = NewDefaultParser(StandardOptions)
 
 func TestParseScheduleErrors(t *testing.T) {
