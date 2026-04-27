@@ -23,7 +23,7 @@ func TestWithVerboseLogger(t *testing.T) {
 		t.Error("expected provided logger")
 	}
 
-	sched, err := ParseStandard("@every 1s")
+	sched, err := standardParser.Parse("@every 1s")
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -51,7 +51,7 @@ func TestWithOnCycleCompleted(t *testing.T) {
 	}
 	c := New(WithOnCycleCompleted(f))
 
-	sched, err := ParseStandard("@every 1s")
+	sched, err := standardParser.Parse("@every 1s")
 	if err != nil {
 		t.Error("non-nil error")
 	}

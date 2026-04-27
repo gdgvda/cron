@@ -26,6 +26,10 @@ const (
 	Descriptor                             // Allow descriptors such as @monthly, @weekly, etc.
 )
 
+// StandardOptions represents the default options for parsing standard cron strings.
+// It includes 5 fields (Minute, Hour, Dom, Month, Dow) and the Descriptor option.
+const StandardOptions = Minute | Hour | Dom | Month | Dow | Descriptor
+
 var places = []ParseOption{
 	Second,
 	Minute,
@@ -213,22 +217,6 @@ func normalizeFields(fields []string, options ParseOption) ([]string, error) {
 		}
 	}
 	return expandedFields, nil
-}
-
-var standardParser, _ = NewDefaultParser(
-	Minute | Hour | Dom | Month | Dow | Descriptor,
-)
-
-// ParseStandard returns a new crontab schedule representing the given
-// standardSpec (https://en.wikipedia.org/wiki/Cron). It requires 5 entries
-// representing: minute, hour, day of month, month and day of week, in that
-// order. It returns a descriptive error if the spec is not valid.
-//
-// It accepts
-//   - Standard crontab specs, e.g. "* * * * ?"
-//   - Descriptors, e.g. "@midnight", "@every 1h30m"
-func ParseStandard(standardSpec string) (Schedule, error) {
-	return standardParser.Parse(standardSpec)
 }
 
 // parseDescriptor returns a predefined schedule for the expression, or error if none matches.

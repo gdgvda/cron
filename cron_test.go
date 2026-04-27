@@ -211,7 +211,7 @@ func TestSnapshotEntries(t *testing.T) {
 	executed := false
 	clock := NewTimerSkippingInstantExecutionClock(start)
 	cron := New(WithClock(clock))
-	sched, err := ParseStandard("@every 2s")
+	sched, err := standardParser.Parse("@every 2s")
 	if err != nil {
 		t.Error("non-nil error")
 	}
@@ -876,7 +876,7 @@ func TestRunningOutOfIDs(t *testing.T) {
 	cron := New()
 	cron.next = ID(^uint(0))
 
-	sched, err := ParseStandard("* * * * *")
+	sched, err := standardParser.Parse("* * * * *")
 	if err != nil {
 		t.Error("non-nil error")
 	}
