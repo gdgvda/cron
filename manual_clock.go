@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type timerSkippingInstantExecutionClock struct {
+type TimerSkippingInstantExecutionClock struct {
 	mu   *sync.Mutex
 	now  time.Time
 	next struct {
@@ -19,9 +19,9 @@ type timerSkippingInstantExecutionClock struct {
 	onCycleCompleted chan struct{}
 }
 
-func NewTimerSkippingInstantExecutionClock(start time.Time) ManualClock {
+func NewTimerSkippingInstantExecutionClock(start time.Time) *TimerSkippingInstantExecutionClock {
 	l := &sync.Mutex{}
-	return &timerSkippingInstantExecutionClock{
+	return &TimerSkippingInstantExecutionClock{
 		mu:  l,
 		now: start,
 		next: struct {
@@ -41,7 +41,7 @@ func NewTimerSkippingInstantExecutionClock(start time.Time) ManualClock {
 	}
 }
 
-func (c *timerSkippingInstantExecutionClock) Register(cron *Cron) []Option {
+func (c *TimerSkippingInstantExecutionClock) Register(cron *Cron) []Option {
 	c.onCycleCompleted = make(chan struct{})
 	return []Option{WithOnCycleCompleted(
 		func() {
@@ -50,13 +50,13 @@ func (c *timerSkippingInstantExecutionClock) Register(cron *Cron) []Option {
 	)}
 }
 
-func (c *timerSkippingInstantExecutionClock) Now() time.Time {
+func (c *TimerSkippingInstantExecutionClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.now
 }
 
-func (c *timerSkippingInstantExecutionClock) Timer(t time.Time) (<-chan struct{}, func()) {
+func (c *TimerSkippingInstantExecutionClock) Timer(t time.Time) (<-chan struct{}, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next.time = t
@@ -70,7 +70,7 @@ func (c *timerSkippingInstantExecutionClock) Timer(t time.Time) (<-chan struct{}
 	}
 }
 
-func (c *timerSkippingInstantExecutionClock) NopTimer() (<-chan struct{}, func()) {
+func (c *TimerSkippingInstantExecutionClock) NopTimer() (<-chan struct{}, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next.time = time.Time{}
@@ -84,12 +84,12 @@ func (c *timerSkippingInstantExecutionClock) NopTimer() (<-chan struct{}, func()
 	}
 }
 
-func (c *timerSkippingInstantExecutionClock) AdvanceBy(duration time.Duration) {
+func (c *TimerSkippingInstantExecutionClock) AdvanceBy(duration time.Duration) {
 	target := c.now.Add(duration)
 	c.AdvanceTo(target)
 }
 
-func (c *timerSkippingInstantExecutionClock) AdvanceTo(target time.Time) {
+func (c *TimerSkippingInstantExecutionClock) AdvanceTo(target time.Time) {
 	for {
 		c.mu.Lock()
 		for !c.sleeping.value {

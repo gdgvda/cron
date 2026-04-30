@@ -4,35 +4,35 @@ import "time"
 
 const DefaultNopTimer = 100_000 * time.Hour
 
-func NewDefaultClock(location *time.Location, nop time.Duration) Clock {
-	return &defaultClock{
+func NewDefaultClock(location *time.Location, nop time.Duration) *DefaultClock {
+	return &DefaultClock{
 		location: location,
 		nop:      nop,
 	}
 }
 
-type defaultClock struct {
+type DefaultClock struct {
 	location *time.Location
 	nop      time.Duration
 }
 
-func (c *defaultClock) Register(cron *Cron) []Option {
+func (c *DefaultClock) Register(cron *Cron) []Option {
 	return []Option{}
 }
 
-func (c *defaultClock) Now() time.Time {
+func (c *DefaultClock) Now() time.Time {
 	return time.Now().In(c.location)
 }
 
-func (c *defaultClock) Timer(t time.Time) (<-chan struct{}, func()) {
+func (c *DefaultClock) Timer(t time.Time) (<-chan struct{}, func()) {
 	return c.timer(time.Until(t))
 }
 
-func (c *defaultClock) NopTimer() (<-chan struct{}, func()) {
+func (c *DefaultClock) NopTimer() (<-chan struct{}, func()) {
 	return c.timer(c.nop)
 }
 
-func (c *defaultClock) timer(duration time.Duration) (<-chan struct{}, func()) {
+func (c *DefaultClock) timer(duration time.Duration) (<-chan struct{}, func()) {
 	timer := time.NewTimer(duration)
 	out := make(chan struct{})
 	stop := make(chan struct{})
