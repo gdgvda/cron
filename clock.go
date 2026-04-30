@@ -18,9 +18,3 @@ type Clock interface {
 	Timer(time.Time) (timer <-chan struct{}, stop func())
 	NopTimer() (timer <-chan struct{}, stop func())
 }
-
-type ManualClock interface {
-	Clock
-	AdvanceBy(duration time.Duration)
-	AdvanceTo(time time.Time)
-}
