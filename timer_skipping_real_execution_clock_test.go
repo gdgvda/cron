@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -254,6 +255,63 @@ func TestTimerSkippingRealExecutionClockFlowsDuringJumpWindows(t *testing.T) {
 	}
 }
 
+// Concurrent advances are serialized rather than silently dropped: each one runs to completion, so
+// their durations add up and every activation in between fires.
+func TestTimerSkippingRealExecutionClockConcurrentAdvances(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := NewTimerSkippingRealExecutionClock(start)
+	crn := New(WithClock(clock))
+
+	sched, err := secondParser.Parse("* * * * * *") // every second
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const advances = 4
+	var execs atomic.Int32
+	if _, err = crn.Schedule(sched, func() { execs.Add(1) }); err != nil {
+		t.Fatal(err)
+	}
+
+	crn.Start()
+	defer crn.Stop()
+
+	var wg sync.WaitGroup
+	for i := 0; i < advances; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clock.AdvanceBy(time.Second)
+		}()
+	}
+	wg.Wait()
+	clock.WaitForIdle()
+
+	if target := start.Add(advances * time.Second); clock.Now().Before(target) {
+		t.Errorf("expected concurrent advances to add up to %v, got %v", target, clock.Now())
+	}
+	if n := execs.Load(); n < advances {
+		t.Errorf("expected %d activations to fire, got %d executions", advances, n)
+	}
+}
+
+// Firing an activation the scheduler has already stopped waiting for must not leave a cycle
+// counted as running, which would hang WaitForIdle forever.
+func TestTimerSkippingRealExecutionClockFireCompensatesLostRace(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := NewTimerSkippingRealExecutionClock(start)
+
+	at := start.Add(time.Second)
+	clock.timer.arm(at)
+	clock.timer.disarm() // the scheduler woke up for another reason, e.g. an entry insertion
+
+	clock.fire(at)
+
+	if n := clock.cycles.running(); n != 0 {
+		t.Errorf("expected no cycle running after a lost fire race, got %d", n)
+	}
+}
+
 // WaitForIdle on a clock that never fired anything returns immediately.
 func TestTimerSkippingRealExecutionClockWaitForIdleWhenAlreadyIdle(t *testing.T) {
 	clock := NewTimerSkippingRealExecutionClock(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -267,4 +325,368 @@ func TestTimerSkippingRealExecutionClockWaitForIdleWhenAlreadyIdle(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("WaitForIdle should return immediately on an idle clock")
 	}
+}
+
+func TestVirtualTimeFrozenByDefault(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	v := newVirtualTime(start)
+
+	time.Sleep(20 * time.Millisecond)
+
+	if !v.now().Equal(start) {
+		t.Errorf("expected time frozen at %v, got %v", start, v.now())
+	}
+}
+
+func TestVirtualTimeAdvanceMovesForwardOnly(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	v := newVirtualTime(start)
+
+	future := start.Add(time.Hour)
+	v.advance(future)
+	if !v.now().Equal(future) {
+		t.Errorf("expected time advanced to %v, got %v", future, v.now())
+	}
+
+	v.advance(start)
+	if !v.now().Equal(future) {
+		t.Errorf("expected advance never to move time backwards, got %v", v.now())
+	}
+}
+
+func TestVirtualTimeFlowTracksWallClock(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	v := newVirtualTime(start)
+
+	v.flow()
+	const sleep = 50 * time.Millisecond
+	time.Sleep(sleep)
+
+	elapsed := v.now().Sub(start)
+	if elapsed < sleep/2 {
+		t.Errorf("expected flowing time to track the wall clock, only %v elapsed", elapsed)
+	}
+	if elapsed > 10*sleep {
+		t.Errorf("flowing time ran too fast: %v elapsed", elapsed)
+	}
+}
+
+func TestVirtualTimeAdvanceIgnoredWhileFlowing(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	v := newVirtualTime(start)
+
+	v.flow()
+	v.advance(start.Add(time.Hour))
+
+	if v.now().Sub(start) >= time.Hour {
+		t.Errorf("expected advance to be a no-op while flowing, got %v", v.now())
+	}
+}
+
+func TestVirtualTimeFreezePinsCurrentInstant(t *testing.T) {
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	v := newVirtualTime(start)
+
+	v.flow()
+	time.Sleep(20 * time.Millisecond)
+	v.freeze()
+
+	pinned := v.now()
+	if pinned.Before(start) {
+		t.Errorf("expected frozen time at or after %v, got %v", start, pinned)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if !v.now().Equal(pinned) {
+		t.Errorf("expected time to stay pinned at %v after freeze, got %v", pinned, v.now())
+	}
+}
+
+func TestSchedulerTimerArmAndFire(t *testing.T) {
+	s := &schedulerTimer{}
+	at := time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	timer := s.arm(at)
+	if !s.fireIfArmedAt(at) {
+		t.Fatal("expected fire to succeed on a timer armed at the same time")
+	}
+
+	select {
+	case <-timer:
+	default:
+		t.Error("expected the timer channel to have fired")
+	}
+	if _, open := <-timer; open {
+		t.Error("expected the timer channel to be closed after firing")
+	}
+}
+
+func TestSchedulerTimerFireRequiresMatchingActivation(t *testing.T) {
+	s := &schedulerTimer{}
+	at := time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	s.arm(at)
+	if s.fireIfArmedAt(at.Add(time.Second)) {
+		t.Error("expected fire to fail for a different activation time")
+	}
+	if !s.fireIfArmedAt(at) {
+		t.Error("expected fire to succeed for the armed activation time")
+	}
+	if s.fireIfArmedAt(at) {
+		t.Error("expected fire to fail once the timer has already fired")
+	}
+}
+
+func TestSchedulerTimerFireFailsWhenDisarmed(t *testing.T) {
+	s := &schedulerTimer{}
+	at := time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	s.arm(at)
+	s.disarm()
+	if s.fireIfArmedAt(at) {
+		t.Error("expected fire to fail on a disarmed timer")
+	}
+}
+
+func TestSchedulerTimerState(t *testing.T) {
+	s := &schedulerTimer{}
+	at := time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	if _, armed := s.state(); armed {
+		t.Error("expected the timer not to be armed initially")
+	}
+
+	s.arm(at)
+	if got, armed := s.state(); !armed || !got.Equal(at) {
+		t.Errorf("expected an armed timer at %v, got %v (armed=%v)", at, got, armed)
+	}
+
+	s.disarm()
+	if _, armed := s.state(); armed {
+		t.Error("expected the timer not to be armed after disarming")
+	}
+}
+
+func TestSchedulerTimerNop(t *testing.T) {
+	s := &schedulerTimer{}
+
+	timer := s.armNop()
+	if at, armed := s.state(); !armed || !at.IsZero() {
+		t.Errorf("expected an armed nop timer with a zero activation, got %v (armed=%v)", at, armed)
+	}
+	if s.fireIfArmedAt(time.Time{}) {
+		t.Error("expected a nop timer never to fire")
+	}
+	select {
+	case <-timer:
+		t.Error("expected the nop timer channel never to fire")
+	default:
+	}
+}
+
+// Exercise the full arm/fire protocol between a scheduler-like goroutine and a firing goroutine,
+// as the clock uses it.
+func TestSchedulerTimerConcurrentArmAndFire(t *testing.T) {
+	s := &schedulerTimer{}
+	base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	const rounds = 100
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < rounds; i++ {
+			timer := s.arm(base.Add(time.Duration(i) * time.Second))
+			<-timer
+		}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for fired := 0; fired < rounds; {
+		if time.Now().After(deadline) {
+			t.Fatalf("expected %d fires within the deadline, got %d", rounds, fired)
+		}
+		at, armed := s.state()
+		if !armed {
+			runtime.Gosched()
+			continue
+		}
+		if !s.fireIfArmedAt(at) {
+			t.Fatalf("fire %d: expected fire to succeed, the scheduler only re-arms after each fire", fired)
+		}
+		fired++
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected the scheduler goroutine to observe all fires")
+	}
+}
+
+func TestCycleCounterCounts(t *testing.T) {
+	c := newCycleCounter()
+	if c.running() != 0 {
+		t.Errorf("expected 0 running cycles, got %d", c.running())
+	}
+
+	c.started()
+	c.started()
+	if c.running() != 2 {
+		t.Errorf("expected 2 running cycles, got %d", c.running())
+	}
+
+	c.completed()
+	if c.running() != 1 {
+		t.Errorf("expected 1 running cycle, got %d", c.running())
+	}
+}
+
+func TestCycleCounterAwaitNoneReturnsImmediatelyAtZero(t *testing.T) {
+	c := newCycleCounter()
+	done := make(chan struct{})
+	go func() {
+		c.awaitNone()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected awaitNone to return immediately when no cycle is running")
+	}
+}
+
+func TestCycleCounterAwaitNoneBlocksWhileRunning(t *testing.T) {
+	c := newCycleCounter()
+	c.started()
+
+	done := make(chan struct{})
+	go func() {
+		c.awaitNone()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("expected awaitNone to block while a cycle is running")
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	c.completed()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected awaitNone to return once no cycle is running")
+	}
+}
+
+func TestLoopStateBeginAgainAfterEnd(t *testing.T) {
+	state := &loopState{}
+	state.begin()
+	state.end()
+	state.begin()
+	state.end()
+}
+
+// begin asserts that the previous goroutine was interrupted. The clock's driver mutex makes this
+// unreachable through the public API; the assertion exists so that a future caller breaking the
+// invariant fails loudly instead of leaking a goroutine.
+func TestLoopStateBeginAssertsPreviousGoroutineEnded(t *testing.T) {
+	state := &loopState{}
+	state.begin()
+	defer func() {
+		if recover() == nil {
+			t.Error("expected begin to panic while a goroutine is active")
+		}
+		state.end()
+	}()
+	state.begin()
+}
+
+func TestLoopStateInterruptStopsGoroutine(t *testing.T) {
+	state := &loopState{}
+	state.begin()
+
+	exited := make(chan struct{})
+	go func() {
+		for state.await(nil) {
+		}
+		// exited is closed before end so that interrupt returning proves the goroutine exited.
+		close(exited)
+		state.end()
+	}()
+
+	state.interrupt()
+	select {
+	case <-exited:
+	default:
+		t.Error("expected interrupt to return only after the goroutine ended")
+	}
+}
+
+func TestLoopStateInterruptAndAwaitEndWhenInactive(t *testing.T) {
+	state := &loopState{}
+	done := make(chan struct{})
+	go func() {
+		state.interrupt()
+		state.awaitEnd()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected interrupt and awaitEnd to return immediately on an inactive loop")
+	}
+}
+
+func TestLoopStateAwaitEnd(t *testing.T) {
+	state := &loopState{}
+	state.begin()
+
+	finish := make(chan struct{})
+	go func() {
+		<-finish
+		state.end()
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		state.awaitEnd()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("expected awaitEnd to block while the goroutine is active")
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	close(finish)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected awaitEnd to return once the goroutine ended")
+	}
+}
+
+func TestLoopStateAwaitDue(t *testing.T) {
+	state := &loopState{}
+	state.begin()
+
+	wallTimer := time.NewTimer(time.Millisecond)
+	defer wallTimer.Stop()
+	if !state.await(wallTimer.C) {
+		t.Error("expected await to keep running on wall-clock timer expiry")
+	}
+	state.end()
+}
+
+func TestLoopStateNudge(t *testing.T) {
+	state := &loopState{}
+	state.nudge() // inactive: dropped, must not panic
+
+	state.begin()
+	state.nudge()
+	if !state.await(nil) {
+		t.Fatal("expected await to keep running after a nudge")
+	}
+	state.end()
 }
