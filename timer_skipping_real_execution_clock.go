@@ -38,7 +38,12 @@ func NewTimerSkippingRealExecutionClock(start time.Time) *TimerSkippingRealExecu
 }
 
 func (c *TimerSkippingRealExecutionClock) Register(cron *Cron) []Option {
-	return []Option{WithOnCycleCompleted(c.completeCycle)}
+	return []Option{WithOnCycleCompleted(
+		func() {
+			c.cycles.Add(-1)
+			c.loop.nudge()
+		},
+	)}
 }
 
 func (c *TimerSkippingRealExecutionClock) Now() time.Time {
@@ -191,12 +196,6 @@ func (c *TimerSkippingRealExecutionClock) fire(at time.Time) {
 		// The scheduler disarmed or re-armed its timer concurrently: no cycle started after all.
 		c.cycles.Add(-1)
 	}
-}
-
-// completeCycle records that all jobs started by one activation have finished.
-func (c *TimerSkippingRealExecutionClock) completeCycle() {
-	c.cycles.Add(-1)
-	c.loop.nudge()
 }
 
 // virtualTime is a concurrency-safe notion of time. It is normally frozen at a fixed instant; it
