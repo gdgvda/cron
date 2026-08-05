@@ -307,7 +307,7 @@ func TestTimerSkippingRealExecutionClockFireCompensatesLostRace(t *testing.T) {
 
 	clock.fire(at)
 
-	if n := clock.cycles.running(); n != 0 {
+	if n := clock.cycles.Load(); n != 0 {
 		t.Errorf("expected no cycle running after a lost fire race, got %d", n)
 	}
 }
@@ -519,62 +519,6 @@ func TestSchedulerTimerConcurrentArmAndFire(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("expected the scheduler goroutine to observe all fires")
-	}
-}
-
-func TestCycleCounterCounts(t *testing.T) {
-	c := newCycleCounter()
-	if c.running() != 0 {
-		t.Errorf("expected 0 running cycles, got %d", c.running())
-	}
-
-	c.started()
-	c.started()
-	if c.running() != 2 {
-		t.Errorf("expected 2 running cycles, got %d", c.running())
-	}
-
-	c.completed()
-	if c.running() != 1 {
-		t.Errorf("expected 1 running cycle, got %d", c.running())
-	}
-}
-
-func TestCycleCounterAwaitNoneReturnsImmediatelyAtZero(t *testing.T) {
-	c := newCycleCounter()
-	done := make(chan struct{})
-	go func() {
-		c.awaitNone()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("expected awaitNone to return immediately when no cycle is running")
-	}
-}
-
-func TestCycleCounterAwaitNoneBlocksWhileRunning(t *testing.T) {
-	c := newCycleCounter()
-	c.started()
-
-	done := make(chan struct{})
-	go func() {
-		c.awaitNone()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		t.Fatal("expected awaitNone to block while a cycle is running")
-	case <-time.After(30 * time.Millisecond):
-	}
-
-	c.completed()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("expected awaitNone to return once no cycle is running")
 	}
 }
 

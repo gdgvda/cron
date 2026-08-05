@@ -2,6 +2,7 @@ package cron
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,17 +24,16 @@ type TimerSkippingRealExecutionClock struct {
 	time   *virtualTime
 	timer  *schedulerTimer
 	// cycles counts the fired activations whose jobs have not yet completed.
-	cycles *cycleCounter
+	cycles atomic.Int64
 	// loop manages the goroutine that runs runLoop during and after each advance.
 	loop *loopState
 }
 
 func NewTimerSkippingRealExecutionClock(start time.Time) *TimerSkippingRealExecutionClock {
 	return &TimerSkippingRealExecutionClock{
-		time:   newVirtualTime(start),
-		timer:  &schedulerTimer{},
-		cycles: newCycleCounter(),
-		loop:   &loopState{},
+		time:  newVirtualTime(start),
+		timer: &schedulerTimer{},
+		loop:  &loopState{},
 	}
 }
 
@@ -81,7 +81,8 @@ func (c *TimerSkippingRealExecutionClock) AdvanceTo(target time.Time) {
 func (c *TimerSkippingRealExecutionClock) WaitForIdle() {
 	c.driver.Lock()
 	defer c.driver.Unlock()
-	c.cycles.awaitNone()
+	// Waiting for the loop to end is enough: it only returns on its own once no cycle is running,
+	// and the only other way out is interrupt, which every caller takes under driver.
 	c.loop.awaitEnd()
 }
 
@@ -125,7 +126,7 @@ func (c *TimerSkippingRealExecutionClock) runLoop(target time.Time, reached chan
 		}
 
 		// The scheduler sleeps and no job is executing: the clock freezes and jumps over idle time.
-		if c.cycles.running() == 0 {
+		if c.cycles.Load() == 0 {
 			c.time.freeze()
 			if at.IsZero() || at.After(target) {
 				// No activation fits the advance: jump to target and exit, the deferred freeze
@@ -138,7 +139,7 @@ func (c *TimerSkippingRealExecutionClock) runLoop(target time.Time, reached chan
 			// the clock flowing from that very instant.
 			c.time.advance(at)
 			c.fire(at)
-			if c.cycles.running() > 0 {
+			if c.cycles.Load() > 0 {
 				c.time.flow()
 			}
 			continue
@@ -181,16 +182,16 @@ func (c *TimerSkippingRealExecutionClock) runLoop(target time.Time, reached chan
 // beforehand. The cycle is counted as running before the scheduler is woken, so that it can never
 // be observed completing before it started.
 func (c *TimerSkippingRealExecutionClock) fire(at time.Time) {
-	c.cycles.started()
+	c.cycles.Add(1)
 	if !c.timer.fireIfArmedAt(at) {
 		// The scheduler disarmed or re-armed its timer concurrently: no cycle started after all.
-		c.cycles.completed()
+		c.cycles.Add(-1)
 	}
 }
 
 // completeCycle records that all jobs started by one activation have finished.
 func (c *TimerSkippingRealExecutionClock) completeCycle() {
-	c.cycles.completed()
+	c.cycles.Add(-1)
 	c.loop.nudge()
 }
 
@@ -312,50 +313,6 @@ func (s *schedulerTimer) fireIfArmedAt(t time.Time) bool {
 	s.timer <- struct{}{}
 	close(s.timer)
 	return true
-}
-
-// cycleCounter is a concurrency-safe counter of the cycles whose jobs have started but not yet
-// completed.
-type cycleCounter struct {
-	mu    sync.Mutex
-	count int
-	// none is broadcast whenever count drops to zero.
-	none *sync.Cond
-}
-
-func newCycleCounter() *cycleCounter {
-	c := &cycleCounter{}
-	c.none = sync.NewCond(&c.mu)
-	return c
-}
-
-func (c *cycleCounter) started() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.count++
-}
-
-func (c *cycleCounter) completed() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.count--
-	if c.count == 0 {
-		c.none.Broadcast()
-	}
-}
-
-func (c *cycleCounter) running() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.count
-}
-
-func (c *cycleCounter) awaitNone() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for c.count > 0 {
-		c.none.Wait()
-	}
 }
 
 // loopState manages the lifecycle of a goroutine running a loop in the background: starting it,
