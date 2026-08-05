@@ -58,7 +58,9 @@ func (c *TimerSkippingRealExecutionClock) NopTimer() (<-chan struct{}, func()) {
 }
 
 // AdvanceBy moves the virtual clock forward by duration, firing every activation scheduled within
-// the interval. Jobs may still be running when it returns.
+// the interval. Jobs may still be running when it returns. There is no timeout: advancing needs a
+// scheduler sleeping on a timer, and none is before Cron.Start or after Cron.Stop, so advancing
+// then blocks forever.
 func (c *TimerSkippingRealExecutionClock) AdvanceBy(duration time.Duration) {
 	c.driver.Lock()
 	defer c.driver.Unlock()
@@ -67,7 +69,9 @@ func (c *TimerSkippingRealExecutionClock) AdvanceBy(duration time.Duration) {
 }
 
 // AdvanceTo moves the virtual clock forward to target, firing every activation scheduled up to and
-// including it. Jobs may still be running when it returns.
+// including it. Jobs may still be running when it returns. There is no timeout: advancing needs a
+// scheduler sleeping on a timer, and none is before Cron.Start or after Cron.Stop, so advancing
+// then blocks forever.
 func (c *TimerSkippingRealExecutionClock) AdvanceTo(target time.Time) {
 	c.driver.Lock()
 	defer c.driver.Unlock()
