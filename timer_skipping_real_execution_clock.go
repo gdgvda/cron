@@ -227,8 +227,8 @@ func (v *virtualTime) nowLocked() time.Time {
 	return v.frozen
 }
 
-// advance moves the frozen time forward to t; it never moves backwards. While flowing it is a
-// no-op: a flowing time has already reached t when its observer finds t due.
+// advance moves the frozen time forward to t; it never moves backwards. It is a no-op while
+// flowing: time is then moving on its own, so a manual advance is ignored rather than deferred.
 func (v *virtualTime) advance(t time.Time) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
