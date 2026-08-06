@@ -34,6 +34,12 @@ func WithOnCycleCompleted(f func()) Option {
 	}
 }
 
+// WithSkipIfRunning skips an activation that comes due while the previous run of
+// the same job is still in progress.
+//
+// The guard is per job, so distinct jobs never hold each other up. It is
+// mutually exclusive with [WithQueueIfStillRunning]: giving both leaves the last
+// one in effect. With neither, successive runs of the same job may overlap.
 func WithSkipIfRunning() Option {
 	return func(c *Cron) {
 		c.overlap = func(cmd func(), logger *slog.Logger) func() {
@@ -52,6 +58,12 @@ func WithSkipIfRunning() Option {
 	}
 }
 
+// WithQueueIfStillRunning defers an activation that comes due while the previous
+// run of the same job is still in progress, running it once that one completes.
+//
+// The guard is per job, so distinct jobs never hold each other up. It is
+// mutually exclusive with [WithSkipIfRunning]: giving both leaves the last one
+// in effect. With neither, successive runs of the same job may overlap.
 func WithQueueIfStillRunning() Option {
 	return func(c *Cron) {
 		c.overlap = func(cmd func(), logger *slog.Logger) func() {
