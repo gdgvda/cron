@@ -175,7 +175,7 @@ Cron use a [Clock] interface when interacting with time. A custom clock can be s
 between scheduled activations: [NewTimerSkippingInstantExecutionClock] runs each job to completion
 in no virtual time at all, while [NewTimerSkippingRealExecutionClock] lets jobs execute in real
 time with the clock flowing along with them, which is what testing overlapping executions
-(see [DelayIfStillRunning], [SkipIfStillRunning]) requires.
+(see [WithQueueIfStillRunning], [WithSkipIfRunning]) requires.
 
 The clock is also responsible for defining the timezone to be used when applying the cron schedule.
 The default clock can be created with a different timezone using [NewDefaultClock].
@@ -214,7 +214,7 @@ A schedule's timezone can be modified programmatically using the [DefaultSchedul
 Be aware that jobs scheduled during daylight-savings leap-ahead transitions will
 not be run!
 
-# Job Wrappers
+# Overlapping executions
 
 A Cron runner may be configured to control how overlapping executions of the
 same job are handled. For example:

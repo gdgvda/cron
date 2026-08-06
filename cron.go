@@ -85,8 +85,6 @@ func New(opts ...Option) *Cron {
 }
 
 // Schedule adds a job to the Cron to be run on the given schedule.
-// The job is wrapped with the configured overlap handler (see
-// WithSkipIfRunning and WithQueueIfStillRunning).
 func (c *Cron) Schedule(schedule Schedule, cmd func()) (ID, error) {
 	c.runningMu.Lock()
 	defer c.runningMu.Unlock()
