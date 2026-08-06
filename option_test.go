@@ -131,11 +131,11 @@ func TestWithSkipIfRunning(t *testing.T) {
 }
 
 // A job spanning the next activation gets that activation queued (run after
-// the first completes) when the cron is configured with WithQueueIfStillRunning.
-func TestWithQueueIfStillRunning(t *testing.T) {
+// the first completes) when the cron is configured with WithQueueIfRunning.
+func TestWithQueueIfRunning(t *testing.T) {
 	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingRealExecutionClock(start)
-	crn := New(WithClock(clock), WithQueueIfStillRunning())
+	crn := New(WithClock(clock), WithQueueIfRunning())
 
 	// Exactly two activations, one second apart: 00:00:01 and 00:00:02.
 	sched, err := secondParser.Parse("1,2 0 0 1 1 *")
