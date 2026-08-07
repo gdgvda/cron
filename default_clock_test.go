@@ -5,9 +5,21 @@ import (
 	"time"
 )
 
-// The scheduler calls stop() whenever it wakes for a reason other than the timer. That can happen
-// after the timer has already fired, with nobody left to receive the activation: stop() must still
-// return, or the scheduler goroutine deadlocks.
+// stopCompletesWithin isolates stop in its own goroutine, so a deadlock fails the test instead of the package.
+func stopCompletesWithin(t *testing.T, stop func(), timeout time.Duration) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		t.Fatal("stop() blocked forever")
+	}
+}
+
 func TestDefaultClockStopDoesNotBlock(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -24,17 +36,15 @@ func TestDefaultClockStopDoesNotBlock(t *testing.T) {
 
 			time.Sleep(c.settle)
 
-			done := make(chan struct{})
-			go func() {
-				stop()
-				close(done)
-			}()
-
-			select {
-			case <-done:
-			case <-time.After(2 * time.Second):
-				t.Fatal("stop() blocked forever")
-			}
+			stopCompletesWithin(t, stop, 2*time.Second)
 		})
 	}
+}
+
+func TestDefaultClockStopIsIdempotent(t *testing.T) {
+	clock := NewDefaultClock(time.UTC, DefaultNopTimer)
+	_, stop := clock.Timer(clock.Now().Add(time.Hour))
+
+	stopCompletesWithin(t, stop, 2*time.Second)
+	stopCompletesWithin(t, stop, 2*time.Second)
 }
