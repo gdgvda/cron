@@ -89,6 +89,41 @@ func TestJobTriggeredAfterAdvancingTwice(t *testing.T) {
 	}
 }
 
+func TestAdvanceSurvivesAbandonedActivation(t *testing.T) {
+	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
+	clock := NewTimerSkippingInstantExecutionClock(start)
+	clock.Register(New())
+
+	at := start.Add(time.Second)
+	timer, stop := clock.Timer(at)
+
+	advanced := make(chan struct{})
+	go func() {
+		clock.AdvanceBy(time.Second)
+		close(advanced)
+	}()
+
+	// Stand in for the scheduler waking on an insertion rather than on the timer: abandon the
+	// activation it already fired, re-arm at the same still-due time, then take the re-fire.
+	go func() {
+		for len(timer) == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		stop()
+
+		refired, _ := clock.Timer(at)
+		<-refired
+		clock.onCycleCompleted <- struct{}{}
+		clock.Timer(at.Add(time.Second))
+	}()
+
+	select {
+	case <-advanced:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AdvanceBy blocked forever on a cycle completion the abandoned activation never produces")
+	}
+}
+
 func TestNoJobsRegistered(t *testing.T) {
 	start := time.Date(2025, time.October, 7, 12, 0, 0, 0, time.UTC)
 	clock := NewTimerSkippingInstantExecutionClock(start)
