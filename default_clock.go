@@ -1,6 +1,9 @@
 package cron
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 const DefaultNopTimer = 100_000 * time.Hour
 
@@ -34,16 +37,15 @@ func (c *DefaultClock) NopTimer() (<-chan struct{}, func()) {
 
 func (c *DefaultClock) timer(duration time.Duration) (<-chan struct{}, func()) {
 	timer := time.NewTimer(duration)
-	out := make(chan struct{})
+	out := make(chan struct{}, 1)
 	stop := make(chan struct{})
 	go func() {
+		defer timer.Stop()
 		select {
 		case <-timer.C:
 			out <- struct{}{}
 		case <-stop:
 		}
 	}()
-	return out, func() {
-		stop <- struct{}{}
-	}
+	return out, sync.OnceFunc(func() { close(stop) })
 }
