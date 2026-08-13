@@ -9,8 +9,9 @@ type TimerSkippingInstantExecutionClock struct {
 	mu   *sync.Mutex
 	now  time.Time
 	next struct {
-		time  time.Time
-		timer chan struct{}
+		time      time.Time
+		timer     chan struct{}
+		abandoned chan struct{}
 	}
 	sleeping struct {
 		value     bool
@@ -25,11 +26,13 @@ func NewTimerSkippingInstantExecutionClock(start time.Time) *TimerSkippingInstan
 		mu:  l,
 		now: start,
 		next: struct {
-			time  time.Time
-			timer chan struct{}
+			time      time.Time
+			timer     chan struct{}
+			abandoned chan struct{}
 		}{
-			time:  time.Time{},
-			timer: nil,
+			time:      time.Time{},
+			timer:     nil,
+			abandoned: nil,
 		},
 		sleeping: struct {
 			value     bool
@@ -59,14 +62,21 @@ func (c *TimerSkippingInstantExecutionClock) Now() time.Time {
 func (c *TimerSkippingInstantExecutionClock) Timer(t time.Time) (<-chan struct{}, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	timer := make(chan struct{}, 1)
+	abandoned := make(chan struct{})
 	c.next.time = t
-	c.next.timer = make(chan struct{}, 1)
+	c.next.timer = timer
+	c.next.abandoned = abandoned
 	c.sleeping.value = true
 	c.sleeping.condition.Signal()
-	return c.next.timer, func() {
+	return timer, func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		c.sleeping.value = false
+		if len(timer) > 0 {
+			<-timer
+			close(abandoned)
+		}
 	}
 }
 
@@ -102,9 +112,13 @@ func (c *TimerSkippingInstantExecutionClock) AdvanceTo(target time.Time) {
 		}
 		c.now = c.next.time
 		c.sleeping.value = false
+		abandoned := c.next.abandoned
 		c.next.timer <- struct{}{}
 		close(c.next.timer)
 		c.mu.Unlock()
-		<-c.onCycleCompleted
+		select {
+		case <-c.onCycleCompleted:
+		case <-abandoned:
+		}
 	}
 }
