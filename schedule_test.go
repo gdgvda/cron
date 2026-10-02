@@ -489,3 +489,55 @@ func TestWithLocationNil(t *testing.T) {
 		t.Fatalf("expected nil location to return same schedule")
 	}
 }
+
+func TestMinInterval(t *testing.T) {
+	tests := []struct {
+		spec     string
+		expected time.Duration
+	}{
+		// Constant delay
+		{"@every 4s", 4 * time.Second},
+		{"@every 1h30m", 90 * time.Minute},
+
+		// Within a minute
+		{"* * * * * *", time.Second},
+		{"*/5 * * * * *", 5 * time.Second},
+		{"0,3 0 0 29 2 *", 3 * time.Second},
+		{"10,20-22/2,40 * * * * *", 2 * time.Second},
+
+		// Across minutes
+		{"0,57 * * * * *", 3 * time.Second},
+		{"0,57 10,11 * * * *", 3 * time.Second},
+		{"0,57 */2 * * * *", 57 * time.Second},
+		{"0,30 */2 * * * *", 30 * time.Second},
+		{"0 * * * * *", time.Minute},
+		{"0 */15 * * * *", 15 * time.Minute},
+		{"0 10,50 * * * *", 20 * time.Minute},
+
+		// Across hours
+		{"0,57 59,0 * * * *", 3 * time.Second},
+		{"0,57 59,0 */2 * * *", 57 * time.Second},
+		{"57 59,0 */2 * * *", 59 * time.Minute},
+		{"@hourly", time.Hour},
+		{"0 30 8,20 * * *", 12 * time.Hour},
+
+		// Across days, assumed to be consecutive
+		{"0,57 59,0 23,0 * * *", 3 * time.Second},
+		{"0 0 22,2 * * *", 4 * time.Hour},
+		{"@daily", 24 * time.Hour},
+		{"@weekly", 24 * time.Hour},
+		{"TZ=Asia/Tokyo 0 30 04 * * *", 24 * time.Hour},
+	}
+
+	for _, test := range tests {
+		sched, err := secondParser.Parse(test.spec)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		actual := sched.MinInterval()
+		if actual != test.expected {
+			t.Errorf("%s: (expected) %v != %v (actual)", test.spec, test.expected, actual)
+		}
+	}
+}

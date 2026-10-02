@@ -682,6 +682,10 @@ func (*ZeroSchedule) Next(time.Time) time.Time {
 	return time.Time{}
 }
 
+func (*ZeroSchedule) MinInterval() time.Duration {
+	return 0
+}
+
 // Tests that job without time does not run
 func TestJobWithZeroTimeDoesNotRun(t *testing.T) {
 	executed := false

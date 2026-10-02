@@ -11,6 +11,7 @@ type Schedule interface {
 	// Next returns the next activation time, later than the given time.
 	// Next is invoked initially, and then each time the job is run.
 	Next(time.Time) time.Time
+	MinInterval() time.Duration
 }
 
 // Specifies a duty cycle (to the second granularity), based on a
@@ -156,4 +157,46 @@ func (s *DefaultSchedule) WithLocation(l *time.Location) *DefaultSchedule {
 	*s2 = *s
 	s2.location = l
 	return s2
+}
+
+// MinInterval returns the shortest time that can separate two consecutive
+// activations of the schedule.
+//
+// Second, minute and hour fields are fully taken into account. Day and month
+// fields are not: the last activation of a day is assumed to be followed by
+// the first activation of the next day, so that the result is a lower bound
+// for schedules that never activate on consecutive days. Time zone
+// transitions are not considered either.
+func (s *DefaultSchedule) MinInterval() time.Duration {
+	if s.delay != 0 {
+		return s.delay
+	}
+	hours := minGap(s.hourMatch, 24, time.Hour, 1)
+	minutes := minGap(s.minuteMatch, 60, time.Minute, hours)
+	seconds := minGap(s.secondMatch, 60, time.Second, minutes)
+	return time.Duration(seconds) * time.Second
+}
+
+// minGap returns the smallest distance between two consecutive values matched
+// by a field having size values, each lasting unit. The last value is followed
+// by the first one after the enclosing field advanced by outerGap.
+func minGap(match matcher.Matcher, size int, unit time.Duration, outerGap int) int {
+	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	first, last := -1, -1
+	gap := outerGap * size
+	for i := 0; i < size; i++ {
+		if !match(base.Add(time.Duration(i) * unit)) {
+			continue
+		}
+		if first < 0 {
+			first = i
+		} else if i-last < gap {
+			gap = i - last
+		}
+		last = i
+	}
+	if wrap := outerGap*size - last + first; wrap < gap {
+		gap = wrap
+	}
+	return gap
 }
