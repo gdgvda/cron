@@ -214,6 +214,20 @@ A schedule's timezone can be modified programmatically using the [DefaultSchedul
 Be aware that jobs scheduled during daylight-savings leap-ahead transitions will
 not be run!
 
+# Minimum interval
+
+[DefaultSchedule.MinInterval] returns the shortest time between two consecutive
+activations of a schedule, for instance to check that a job completes before it
+can be triggered again:
+
+	sched, _ = parser.Parse("0 9 * * 1,4")
+	sched.MinInterval() // 72h, from Monday to Thursday
+
+Month lengths, leap years and weekdays are taken into account. The schedule's
+location is assumed to keep a constant UTC offset: activations on either side
+of a daylight saving time change can be closer. The result is computed on first
+use, which takes under a millisecond, and cached afterwards.
+
 # Overlapping executions
 
 A Cron runner may be configured to control how overlapping executions of the
