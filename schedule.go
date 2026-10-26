@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"math"
+	"sync"
 	"time"
 
 	"github.com/gdgvda/cron/internal/matcher"
@@ -24,6 +26,23 @@ type DefaultSchedule struct {
 
 	// Constant delay mode when not zero
 	delay time.Duration
+
+	// minInterval computes MinInterval once and caches it. Copies made by
+	// WithLocation share it, the location being ignored.
+	minInterval func() time.Duration
+}
+
+func newDefaultSchedule(second, minute, hour, day, month matcher.Matcher, location *time.Location) *DefaultSchedule {
+	s := &DefaultSchedule{
+		secondMatch: second,
+		minuteMatch: minute,
+		hourMatch:   hour,
+		dayMatch:    day,
+		monthMatch:  month,
+		location:    location,
+	}
+	s.minInterval = sync.OnceValue(s.computeMinInterval)
+	return s
 }
 
 // Next returns the next time this schedule is activated, greater than the given
@@ -160,21 +179,139 @@ func (s *DefaultSchedule) WithLocation(l *time.Location) *DefaultSchedule {
 }
 
 // MinInterval returns the shortest time that can separate two consecutive
-// activations of the schedule.
+// activations of the schedule, or zero if the schedule never activates.
 //
-// Second, minute and hour fields are fully taken into account. Day and month
-// fields are not: the last activation of a day is assumed to be followed by
-// the first activation of the next day, so that the result is a lower bound
-// for schedules that never activate on consecutive days. Time zone
-// transitions are not considered either.
+// All fields are taken into account, and the location is assumed to keep a
+// constant UTC offset: the result is exact in UTC or any fixed-offset zone. In
+// a location that observes daylight saving time, activations on either side of
+// a clock change can be closer than this, down to one second apart.
+//
+// The result is computed on first call, which takes under a millisecond, and
+// cached afterwards.
 func (s *DefaultSchedule) MinInterval() time.Duration {
 	if s.delay != 0 {
 		return s.delay
 	}
-	hours := minGap(s.hourMatch, 24, time.Hour, 1)
+	return s.minInterval()
+}
+
+func (s *DefaultSchedule) computeMinInterval() time.Duration {
+	days := s.minDayGap()
+	if days == 0 {
+		return 0
+	}
+	hours := minGap(s.hourMatch, 24, time.Hour, days)
 	minutes := minGap(s.minuteMatch, 60, time.Minute, hours)
 	seconds := minGap(s.secondMatch, 60, time.Second, minutes)
 	return time.Duration(seconds) * time.Second
+}
+
+// gregorianCycle is the number of years after which the Gregorian calendar,
+// days of the week included, repeats itself.
+const gregorianCycle = 400
+
+// dayMatches holds the days matched in a month or a year, as offsets from its
+// first day. Gap is the smallest distance between two of them, math.MaxInt if
+// there are fewer than two. First and last are -1 if there are none.
+type dayMatches struct {
+	first, last, gap int
+}
+
+var noDayMatches = dayMatches{-1, -1, math.MaxInt}
+
+// extend appends next, starting offset days after the first day of m.
+func (m dayMatches) extend(offset int, next dayMatches) dayMatches {
+	if next.first < 0 {
+		return m
+	}
+	if m.first < 0 {
+		return dayMatches{offset + next.first, offset + next.last, next.gap}
+	}
+	return dayMatches{m.first, offset + next.last, min(m.gap, next.gap, offset+next.first-m.last)}
+}
+
+// monthLengths are the lengths of the months of a non-leap year: February
+// gains a day in leap years.
+var monthLengths = [12]int{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+
+// minDayGap returns the smallest number of days between two consecutive days
+// matched by the month and day fields, or zero if no day is ever matched.
+//
+// Which days of a month are matched by the day fields only depends on its
+// length and on the day of the week of its 1st: each of these 28 month types
+// is scanned once, and the month field is checked once per month. Years are
+// chained from their matching months, once for each of the 14 year types given
+// by the day of the week of January 1st and leap or not. Years are in turn
+// chained over a whole Gregorian cycle, so that gaps spanning several years,
+// including around non-leap century years, are exact.
+func (s *DefaultSchedule) minDayGap() int {
+	var matchedMonths [12]bool
+	for m := range matchedMonths {
+		matchedMonths[m] = s.monthMatch(time.Date(2000, time.Month(m+1), 1, 0, 0, 0, 0, time.UTC))
+	}
+	var monthTypes [28]*dayMatches
+	var yearTypes [14]*dayMatches
+	days := noDayMatches
+	offset := 0
+	weekday := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC).Weekday()
+	for year := 2000; year < 2000+gregorianCycle; year++ {
+		leap := year%4 == 0 && (year%100 != 0 || year%400 == 0)
+		length := 365
+		if leap {
+			length++
+		}
+		c := int(weekday) + 7*(length-365)
+		if yearTypes[c] == nil {
+			yearTypes[c] = s.matchYear(year, weekday, leap, matchedMonths, &monthTypes)
+		}
+		days = days.extend(offset, *yearTypes[c])
+		offset += length
+		weekday = (weekday + time.Weekday(length%7)) % 7
+	}
+	if days.first < 0 {
+		return 0
+	}
+	return min(days.gap, offset-days.last+days.first)
+}
+
+// matchYear chains the matched months of year, starting on weekday, scanning
+// those of a type missing from monthTypes.
+func (s *DefaultSchedule) matchYear(year int, weekday time.Weekday, leap bool, matchedMonths [12]bool, monthTypes *[28]*dayMatches) *dayMatches {
+	days := noDayMatches
+	offset := 0
+	for m, length := range monthLengths {
+		if m == 1 && leap {
+			length++
+		}
+		if matchedMonths[m] {
+			c := int(weekday) + 7*(length-28)
+			if monthTypes[c] == nil {
+				monthTypes[c] = s.matchMonth(time.Date(year, time.Month(m+1), 1, 0, 0, 0, 0, time.UTC), length)
+			}
+			days = days.extend(offset, *monthTypes[c])
+		}
+		offset += length
+		weekday = (weekday + time.Weekday(length%7)) % 7
+	}
+	return &days
+}
+
+// matchMonth returns the days matched by the day fields in the month starting
+// at first and lasting length days.
+func (s *DefaultSchedule) matchMonth(first time.Time, length int) *dayMatches {
+	days := noDayMatches
+	for i := 0; i < length; i++ {
+		if !s.dayMatch(first.Add(time.Duration(i) * 24 * time.Hour)) {
+			continue
+		}
+		if days.first < 0 {
+			days.first = i
+		} else {
+			days.gap = min(days.gap, i-days.last)
+		}
+		days.last = i
+	}
+	return &days
 }
 
 // minGap returns the smallest distance between two consecutive values matched

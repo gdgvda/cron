@@ -3,6 +3,7 @@ package cron
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -521,12 +522,58 @@ func TestMinInterval(t *testing.T) {
 		{"@hourly", time.Hour},
 		{"0 30 8,20 * * *", 12 * time.Hour},
 
-		// Across days, assumed to be consecutive
+		// Across days
 		{"0,57 59,0 23,0 * * *", 3 * time.Second},
 		{"0 0 22,2 * * *", 4 * time.Hour},
 		{"@daily", 24 * time.Hour},
-		{"@weekly", 24 * time.Hour},
+		{"0 0 22,2 * * MON,TUE", 4 * time.Hour},
+		{"0 0 22,2 * * MON,WED", 20 * time.Hour},
+		{"0 0 9 * * 1,4", 3 * 24 * time.Hour},
+		{"@weekly", 7 * 24 * time.Hour},
+		{"0 0 0 1,31 * *", 24 * time.Hour},
+		{"0 0 0 1,L * *", 24 * time.Hour},
+
+		// Across months and years
+		{"@monthly", 28 * 24 * time.Hour},
+		{"0 0 0 31 * *", 31 * 24 * time.Hour},
+		{"0 0 12 */7 * *", 24 * time.Hour},
+		{"0 0 0 31 1,3 *", 59 * 24 * time.Hour},
+		{"@yearly", 365 * 24 * time.Hour},
+		{"0 0 0 1 1,12 *", 31 * 24 * time.Hour},
+		{"0 0 0 29 2 *", (4*365 + 1) * 24 * time.Hour},
+
+		// Relative to the end of the month, nearest weekday, nth weekday
+		{"0 0 0 L * *", 28 * 24 * time.Hour},
+		{"0 0 0 L-4 * *", 28 * 24 * time.Hour},
+		{"0 0 0 L-28 * *", 29 * 24 * time.Hour},
+		{"0 0 0 * * 5L", 28 * 24 * time.Hour},
+		{"0 0 0 * * 5#1", 28 * 24 * time.Hour},
+		{"0 0 0 * * 5#4,5L", 7 * 24 * time.Hour},
+		{"0 0 0 ? * MON#5", 63 * 24 * time.Hour},
+		{"0 0 0 ? 1 MON#5", 364 * 24 * time.Hour},
+		// Feb 29 being a Monday, usually 28 years apart, but only 12 across
+		// non-leap 2200: 2196, 2208.
+		{"0 0 0 ? 2 MON#5", (12*365 + 2) * 24 * time.Hour},
+		{"0 0 0 1W * *", 28 * 24 * time.Hour},
+		{"0 0 0 31W * *", 29 * 24 * time.Hour},
+		{"0 0 0 LW * *", 28 * 24 * time.Hour},
+		{"0 0 0 1W,LW * *", 24 * time.Hour},
+
+		// Restricted day of month and day of week are ORed: last day of the
+		// month or any Friday, Feb 29 or any Monday of February, Jan 1st or
+		// 5th Monday of January.
+		{"0 0 0 L * 5", 24 * time.Hour},
+		{"0 0 0 29 2 MON", 24 * time.Hour},
+		{"0 0 0 1 1 MON#5", 28 * 24 * time.Hour},
+
+		// Never activates
+		{"0 0 0 30 2 *", 0},
+		{"0 0 0 30W 2 *", 0},
+		{"0 0 0 31 4,6,9,11 *", 0},
+
+		// Location offset is assumed constant
 		{"TZ=Asia/Tokyo 0 30 04 * * *", 24 * time.Hour},
+		{"TZ=America/New_York 0 30 1 * * *", 24 * time.Hour},
 	}
 
 	for _, test := range tests {
@@ -539,5 +586,131 @@ func TestMinInterval(t *testing.T) {
 		if actual != test.expected {
 			t.Errorf("%s: (expected) %v != %v (actual)", test.spec, test.expected, actual)
 		}
+	}
+}
+
+// bruteMinGap checks n instants, step apart from 2000-01-01, and returns the
+// smallest distance in steps between two consecutive matching ones, the first
+// one following the last one again after n steps. It returns 0 if none match.
+func bruteMinGap(step time.Duration, n int, match func(time.Time) bool) int {
+	t := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	first, last, gap := -1, -1, n
+	for i := 0; i < n; i, t = i+1, t.Add(step) {
+		if !match(t) {
+			continue
+		}
+		if first < 0 {
+			first = i
+		} else {
+			gap = min(gap, i-last)
+		}
+		last = i
+	}
+	if first < 0 {
+		return 0
+	}
+	return min(gap, n-last+first)
+}
+
+// TestMinIntervalTimeOfDay checks schedules activating every day against
+// matching every second of a day.
+func TestMinIntervalTimeOfDay(t *testing.T) {
+	fields := []string{"0", "0,59", "*/7", "5-9,30", "1,2,58"}
+	hours := []string{"0", "0,23", "*/5", "3,4,22"}
+	for _, second := range fields {
+		for _, minute := range fields {
+			for _, hour := range hours {
+				spec := fmt.Sprintf("%s %s %s * * *", second, minute, hour)
+				sched, err := secondParser.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				seconds := bruteMinGap(time.Second, 24*60*60, func(t time.Time) bool {
+					return sched.hourMatch(t) && sched.minuteMatch(t) && sched.secondMatch(t)
+				})
+				expected := time.Duration(seconds) * time.Second
+				if actual := sched.MinInterval(); actual != expected {
+					t.Errorf("%s: (expected) %v != %v (actual)", spec, expected, actual)
+				}
+			}
+		}
+	}
+}
+
+// TestMinIntervalDays checks schedules activating at midnight against matching
+// every day of a Gregorian cycle.
+func TestMinIntervalDays(t *testing.T) {
+	var days []string
+	doms := []string{"*", "1", "29", "31", "L", "L-28", "15W", "31W", "LW"}
+	months := []string{"*", "2", "1,3", "12"}
+	dows := []string{"*", "1", "5L", "1#1", "1#5"}
+	for _, dom := range doms {
+		for _, month := range months {
+			for _, dow := range dows {
+				days = append(days, fmt.Sprintf("%s %s %s", dom, month, dow))
+			}
+		}
+	}
+	days = append(days,
+		"L-3 2 *", "15W 2,3 *", "13 * FRI", "1 1,7 *", "1 1 MON#5", "? 1 MON#5",
+		"? 2 MON#5", "? 2,8 SUN#5", "? * FRI#2", "? * MON#5", "? 2 3L",
+		"? 1-6/5 MON#5", "30 2 *", "31 4,6,9,11 *",
+	)
+
+	for _, spec := range days {
+		sched, err := secondParser.Parse("0 0 0 " + spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		days := bruteMinGap(24*time.Hour, 146097, func(t time.Time) bool {
+			return sched.monthMatch(t) && sched.dayMatch(t)
+		})
+		expected := time.Duration(days) * 24 * time.Hour
+		if actual := sched.MinInterval(); actual != expected {
+			t.Errorf("%s: (expected) %v != %v (actual)", spec, expected, actual)
+		}
+	}
+}
+
+func TestMinIntervalConcurrent(t *testing.T) {
+	sched, err := secondParser.Parse("0 0 0 L * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nyc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied := sched.WithLocation(nyc)
+
+	var wg sync.WaitGroup
+	results := make([]time.Duration, 8)
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				results[i] = sched.MinInterval()
+			} else {
+				results[i] = copied.MinInterval()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i, actual := range results {
+		if actual != 28*24*time.Hour {
+			t.Errorf("call %d: (expected) %v != %v (actual)", i, 28*24*time.Hour, actual)
+		}
+	}
+}
+
+func BenchmarkMinInterval(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		sched, err := secondParser.Parse("0 0 12 */7 * *")
+		if err != nil {
+			b.Fatal(err)
+		}
+		sched.MinInterval()
 	}
 }
