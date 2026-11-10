@@ -223,10 +223,12 @@ can be triggered again:
 	sched, _ = parser.Parse("0 9 * * 1,4")
 	sched.MinInterval() // 72h, from Monday to Thursday
 
-Month lengths, leap years and weekdays are taken into account. The schedule's
-location is assumed to keep a constant UTC offset: activations on either side
-of a daylight saving time change can be closer. The result is computed on first
-use, which takes under a millisecond, and cached afterwards.
+Month lengths, leap years and weekdays are taken into account, as well as the
+clock changes of the schedule's location, assumed to keep following their
+current rules: in Paris, "30 2 * * *" runs twice an hour apart when clocks go
+back from 3:00 to 2:00, and "@daily" runs 23 hours apart when they go forward.
+A schedule without a time zone is assumed to run in [time.Local]. The result is
+computed on first use, which takes about a millisecond, and cached afterwards.
 
 # Overlapping executions
 
