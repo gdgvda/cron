@@ -2,6 +2,7 @@ package cron
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -491,6 +492,15 @@ func TestWithLocationNil(t *testing.T) {
 	}
 }
 
+// parseUTC parses spec with seconds, in UTC unless it sets a location, so that
+// results don't depend on the local time zone.
+func parseUTC(spec string) (*DefaultSchedule, error) {
+	if !strings.HasPrefix(spec, "TZ=") && !strings.HasPrefix(spec, "CRON_TZ=") {
+		spec = "TZ=UTC " + spec
+	}
+	return secondParser.Parse(spec)
+}
+
 func TestMinInterval(t *testing.T) {
 	tests := []struct {
 		spec     string
@@ -571,13 +581,12 @@ func TestMinInterval(t *testing.T) {
 		{"0 0 0 30W 2 *", 0},
 		{"0 0 0 31 4,6,9,11 *", 0},
 
-		// Location offset is assumed constant
+		// Fixed UTC offset
 		{"TZ=Asia/Tokyo 0 30 04 * * *", 24 * time.Hour},
-		{"TZ=America/New_York 0 30 1 * * *", 24 * time.Hour},
 	}
 
 	for _, test := range tests {
-		sched, err := secondParser.Parse(test.spec)
+		sched, err := parseUTC(test.spec)
 		if err != nil {
 			t.Error(err)
 			continue
@@ -621,7 +630,7 @@ func TestMinIntervalTimeOfDay(t *testing.T) {
 		for _, minute := range fields {
 			for _, hour := range hours {
 				spec := fmt.Sprintf("%s %s %s * * *", second, minute, hour)
-				sched, err := secondParser.Parse(spec)
+				sched, err := parseUTC(spec)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -658,7 +667,7 @@ func TestMinIntervalDays(t *testing.T) {
 	)
 
 	for _, spec := range days {
-		sched, err := secondParser.Parse("0 0 0 " + spec)
+		sched, err := parseUTC("0 0 0 " + spec)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -672,8 +681,141 @@ func TestMinIntervalDays(t *testing.T) {
 	}
 }
 
+// TestMinIntervalDST checks schedules in locations observing daylight saving
+// time, or used to.
+func TestMinIntervalDST(t *testing.T) {
+	tests := []struct {
+		spec     string
+		expected time.Duration
+	}{
+		// Clocks go forward from 2:00 to 3:00 in March, and back from 2:00 to
+		// 1:00 in November.
+		{"TZ=America/New_York @daily", 23 * time.Hour},
+		{"TZ=America/New_York @weekly", 167 * time.Hour},
+		{"TZ=America/New_York 0 0 1,3 * * *", time.Hour},
+		{"TZ=America/New_York 0 */15 * * * *", 15 * time.Minute},
+		// 1:30 happens twice, 2:30 once at most.
+		{"TZ=America/New_York 0 30 1 * * *", time.Hour},
+		{"TZ=America/New_York 0 30 2 * * *", 24 * time.Hour},
+
+		// Clocks go forward from 2:00 to 3:00 in March, and back from 3:00 to
+		// 2:00 in October.
+		{"TZ=Europe/Paris * * * * * *", time.Second},
+		{"TZ=Europe/Paris 0 0 2 * * *", time.Hour},
+		{"TZ=Europe/Paris 0 30 2 * * *", time.Hour},
+		{"TZ=Europe/Paris 0 0 3 * * *", 23 * time.Hour},
+		{"TZ=Europe/Paris 0 0 22,2 * * *", time.Hour},
+		{"TZ=Europe/Paris 0 30 8,20 * * *", 11 * time.Hour},
+		// Gaps spanning one clock change: an hour shorter from January to July
+		// in the northern hemisphere, longer in the southern one.
+		{"TZ=Europe/Paris 0 0 0 1 1,7 *", (181*24 - 1) * time.Hour},
+		{"TZ=Australia/Sydney 0 0 0 1 1,7 *", (181*24 + 1) * time.Hour},
+
+		// Clocks go forward from 2:00 to 2:30 in October, and back from 2:00
+		// to 1:30 in April.
+		{"TZ=Australia/Lord_Howe @daily", 23*time.Hour + 30*time.Minute},
+		{"TZ=Australia/Lord_Howe 0 45 1 * * *", 30 * time.Minute},
+
+		// Clocks go forward from 0:00 to 1:00 in March, and back from 1:00 to
+		// 0:00 in November, when midnight happens twice.
+		{"TZ=America/Havana @daily", time.Hour},
+		{"TZ=America/Havana 0 0 1 * * *", 23 * time.Hour},
+		// Clocks go forward from 0:00 to 1:00 in April, and back from 24:00
+		// to 23:00 in October.
+		{"TZ=Africa/Cairo 0 0 1 * * *", 23 * time.Hour},
+		{"TZ=Africa/Cairo 0 30 23 * * *", time.Hour},
+
+		// No daylight saving time since 2019.
+		{"TZ=America/Sao_Paulo @daily", 24 * time.Hour},
+		// Fixed offset, not a whole number of hours.
+		{"TZ=Asia/Kolkata @daily", 24 * time.Hour},
+	}
+
+	for _, test := range tests {
+		sched, err := secondParser.Parse(test.spec)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if actual := sched.MinInterval(); actual != test.expected {
+			t.Errorf("%s: (expected) %v != %v (actual)", test.spec, test.expected, actual)
+		}
+	}
+}
+
+// TestMinIntervalNext checks schedules in locations with clock changes against
+// their activations from this year to the next one, as returned by Next.
+func TestMinIntervalNext(t *testing.T) {
+	locations := []string{
+		"America/New_York", "Europe/Paris", "Australia/Sydney",
+		"America/St_Johns", "Australia/Lord_Howe", "Pacific/Chatham",
+		"Africa/Cairo", "America/Havana", "America/Santiago", "Asia/Kolkata",
+	}
+	specs := []string{
+		"0 0 0 * * *", "0 0,30 1-3 * * *", "0 45 1,2 * * *", "0 0 22,2 * * *",
+		"0 */20 0-3 * * SUN", "0 30 2 * * SAT,SUN", "0 0 12 * * SUN",
+		"0 0 0 L * *", "50 59 1,2 * * *",
+	}
+	year := time.Now().Year()
+	for _, name := range locations {
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, spec := range specs {
+			sched, err := secondParser.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sched = sched.WithLocation(loc)
+			expected := time.Duration(math.MaxInt64)
+			prev := sched.Next(time.Date(year, time.January, 1, 0, 0, 0, 0, loc).Add(-time.Second))
+			for next := sched.Next(prev); next.Year() <= year+1; prev, next = next, sched.Next(next) {
+				expected = min(expected, next.Sub(prev))
+			}
+			if actual := sched.MinInterval(); actual != expected {
+				t.Errorf("%s %s: (expected) %v != %v (actual)", name, spec, expected, actual)
+			}
+		}
+	}
+}
+
+// TestClockChanges checks the changes of UTC offset found in a year.
+func TestClockChanges(t *testing.T) {
+	tests := []struct {
+		location string
+		year     int
+		expected []string
+	}{
+		{"Europe/Paris", 2027, []string{"03-28 02:00 -> 03-28 03:00", "10-31 03:00 -> 10-31 02:00"}},
+		// Leap year beyond the transitions listed by the database.
+		{"Europe/Paris", 2040, []string{"03-25 02:00 -> 03-25 03:00", "10-28 03:00 -> 10-28 02:00"}},
+		{"Australia/Sydney", 2027, []string{"04-04 03:00 -> 04-04 02:00", "10-03 02:00 -> 10-03 03:00"}},
+		{"Africa/Cairo", 2027, []string{"04-30 00:00 -> 04-30 01:00", "10-29 00:00 -> 10-28 23:00"}},
+		{"Asia/Kolkata", 2027, nil},
+		{"America/Sao_Paulo", 2027, nil},
+	}
+	for _, test := range tests {
+		loc, err := time.LoadLocation(test.location)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual []string
+		for _, change := range clockChanges(loc, test.year) {
+			from := time.Unix(yearStart(test.year)+change.from, 0).UTC().Format("01-02 15:04")
+			to := time.Unix(yearStart(test.year)+change.to, 0).UTC().Format("01-02 15:04")
+			actual = append(actual, from+" -> "+to)
+		}
+		if fmt.Sprint(actual) != fmt.Sprint(test.expected) {
+			t.Errorf("%s %d: (expected) %v != %v (actual)", test.location, test.year, test.expected, actual)
+		}
+	}
+}
+
+// TestMinIntervalConcurrent checks that concurrent calls agree, and that copies
+// made by WithLocation get their own result.
 func TestMinIntervalConcurrent(t *testing.T) {
-	sched, err := secondParser.Parse("0 0 0 L * *")
+	sched, err := parseUTC("@daily")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,18 +841,26 @@ func TestMinIntervalConcurrent(t *testing.T) {
 	wg.Wait()
 
 	for i, actual := range results {
-		if actual != 28*24*time.Hour {
-			t.Errorf("call %d: (expected) %v != %v (actual)", i, 28*24*time.Hour, actual)
+		expected := 24 * time.Hour
+		if i%2 != 0 {
+			expected = 23 * time.Hour
+		}
+		if actual != expected {
+			t.Errorf("call %d: (expected) %v != %v (actual)", i, expected, actual)
 		}
 	}
 }
 
 func BenchmarkMinInterval(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		sched, err := secondParser.Parse("0 0 12 */7 * *")
-		if err != nil {
-			b.Fatal(err)
-		}
-		sched.MinInterval()
+	for _, spec := range []string{"TZ=UTC 0 0 12 */7 * *", "TZ=Europe/Paris 0 0 12 */7 * *"} {
+		b.Run(spec, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				sched, err := secondParser.Parse(spec)
+				if err != nil {
+					b.Fatal(err)
+				}
+				sched.MinInterval()
+			}
+		})
 	}
 }
