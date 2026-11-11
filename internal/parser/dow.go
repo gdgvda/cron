@@ -100,14 +100,7 @@ func parseDow(expression string) (matcher.Matcher, error) {
 			return nil, fmt.Errorf("%s: value %d out of valid range [1, 5]", expression, occurrence)
 		}
 		return func(t time.Time) bool {
-			start := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
-			end := start.AddDate(0, 1, -1)
-			for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
-				if d.Weekday() == time.Weekday(dow) {
-					return t.Day() == d.AddDate(0, 0, 7*(int(occurrence)-1)).Day()
-				}
-			}
-			return false
+			return t.Weekday() == time.Weekday(dow) && (t.Day()-1)/7 == int(occurrence)-1
 		}, nil
 	}
 
