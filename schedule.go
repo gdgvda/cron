@@ -27,6 +27,9 @@ type DefaultSchedule struct {
 
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
+//
+// Local times repeated by a clock change of the schedule's location activate
+// it twice, and those skipped by one do not activate it.
 func (s *DefaultSchedule) Next(t time.Time) time.Time {
 	if s.delay != 0 {
 		return t.Add(s.delay - time.Duration(t.Nanosecond())*time.Nanosecond)
@@ -36,10 +39,16 @@ func (s *DefaultSchedule) Next(t time.Time) time.Time {
 	//
 	// For Month, Day, Hour, Minute, Second:
 	// Check if the time value matches.  If yes, continue to the next field.
-	// If the field doesn't match the schedule, then increment the field until it matches.
-	// While incrementing the field, a wrap-around brings it back to the beginning
-	// of the field list (since it is necessary to re-verify previous field
-	// values)
+	// If the field doesn't match the schedule, then move to the start of its
+	// next value until it matches. When this changes the previous field, go
+	// back to the beginning of the field list (since it is necessary to
+	// re-verify previous field values).
+	//
+	// Moves are made in actual time, so that local times repeated by a clock
+	// change are visited twice. The start of a day is the clock change that
+	// skips midnight if any, and moves to the next hour stop at clock changes,
+	// as the hour can change there at any minute. Clock changes are assumed to
+	// happen on the minute, as they all have since 1972.
 
 	// Convert the given time into the schedule's timezone, if one is specified.
 	// Save the original timezone so we can convert back after we find a time.
@@ -57,9 +66,6 @@ func (s *DefaultSchedule) Next(t time.Time) time.Time {
 	// Start at the earliest possible time (the upcoming second).
 	t = t.Add(1*time.Second - time.Duration(t.Nanosecond())*time.Nanosecond)
 
-	// This flag indicates whether a field has been incremented.
-	added := false
-
 	// If no time is found within five years, return zero.
 	yearLimit := t.Year() + 5
 
@@ -70,84 +76,74 @@ WRAP:
 
 	// Find the first applicable month.
 	// If it's this month, then do nothing.
-	for !s.monthMatch(t) {
-		// If we have to add a month, reset the other parts to 0.
-		if !added {
-			added = true
-			// Otherwise, set the date at the beginning (since the current time is irrelevant).
-			t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc)
-		}
-		t = t.AddDate(0, 1, 0)
-
-		// Wrapped around.
-		if t.Month() == time.January {
+	for year, month := t.Year(), t.Month(); !s.monthMatch(t); {
+		month++
+		t = startOfDay(year, month, 1, loc)
+		if t.Year() != year {
 			goto WRAP
 		}
 	}
 
 	// Now get a day in that month.
-	//
-	// NOTE: This causes issues for daylight savings regimes where midnight does
-	// not exist.  For example: Sao Paulo has DST that transforms midnight on
-	// 11/3 into 1am. Handle that by noticing when the Hour ends up != 0.
-	for !s.dayMatch(t) {
-		if !added {
-			added = true
-			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
-		}
-		t = t.AddDate(0, 0, 1)
-		// Notice if the hour is no longer midnight due to DST.
-		// Add an hour if it's 23, subtract an hour if it's 1.
-		if t.Hour() != 0 {
-			if t.Hour() > 12 {
-				t = t.Add(time.Duration(24-t.Hour()) * time.Hour)
-			} else {
-				t = t.Add(time.Duration(-t.Hour()) * time.Hour)
-			}
-		}
-
-		if t.Day() == 1 {
+	for year, month, day := t.Date(); !s.dayMatch(t); {
+		day++
+		t = startOfDay(year, month, day, loc)
+		if t.Month() != month {
 			goto WRAP
 		}
 	}
 
-	for !s.hourMatch(t) {
-		if !added {
-			added = true
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc)
-		}
-		t = t.Add(1 * time.Hour)
-
-		if t.Hour() == 0 {
+	for day := t.Day(); !s.hourMatch(t); {
+		t = nextHour(t)
+		if t.Day() != day {
 			goto WRAP
 		}
 	}
 
-	for !s.minuteMatch(t) {
-		if !added {
-			added = true
-			t = t.Truncate(time.Minute)
-		}
-		t = t.Add(1 * time.Minute)
-
-		if t.Minute() == 0 {
+	for hour := t.Hour(); !s.minuteMatch(t); {
+		t = t.Add(time.Duration(minuteSeconds-t.Second()) * time.Second)
+		if t.Hour() != hour {
 			goto WRAP
 		}
 	}
 
-	for !s.secondMatch(t) {
-		if !added {
-			added = true
-			t = t.Truncate(time.Second)
-		}
+	for minute := t.Minute(); !s.secondMatch(t); {
 		t = t.Add(1 * time.Second)
-
-		if t.Second() == 0 {
+		if t.Minute() != minute {
 			goto WRAP
 		}
 	}
 
 	return t.In(origLocation)
+}
+
+// startOfDay returns the first instant of a day in loc, normalized like
+// time.Date: midnight, or the clock change skipping it, which starts the next
+// day if the whole day is skipped.
+func startOfDay(year int, month time.Month, day int, loc *time.Location) time.Time {
+	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	_, offset := t.Zone()
+	midnight := time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Unix()
+	// When midnight is skipped, time.Date returns a time on either side of the
+	// change, depending on the offset.
+	switch wall := t.Unix() + int64(offset); {
+	case wall < midnight:
+		_, t = t.ZoneBounds()
+	case wall > midnight:
+		t, _ = t.ZoneBounds()
+	}
+	return t
+}
+
+// nextHour returns the start of the hour after the one of t, in its location,
+// or the clock change ending the hour if it comes first.
+func nextHour(t time.Time) time.Time {
+	_, minute, second := t.Clock()
+	next := t.Add(time.Duration(hourSeconds-minute*minuteSeconds-second) * time.Second)
+	if _, end := t.ZoneBounds(); end.After(t) && end.Before(next) {
+		return end
+	}
+	return next
 }
 
 // WithLocation returns a copy of the schedule with the given location.
