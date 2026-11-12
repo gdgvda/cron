@@ -101,7 +101,7 @@ WRAP:
 	}
 
 	for hour := t.Hour(); !s.minuteMatch(t); {
-		t = t.Add(time.Duration(minuteSeconds-t.Second()) * time.Second)
+		t = t.Add(time.Duration(60-t.Second()) * time.Second)
 		if t.Hour() != hour {
 			goto WRAP
 		}
@@ -166,7 +166,7 @@ func startOfDay(year int, month time.Month, day int, loc *time.Location, notBefo
 // or the clock change ending the hour if it comes first.
 func nextHour(t time.Time) time.Time {
 	_, minute, second := t.Clock()
-	next := t.Add(time.Duration(hourSeconds-minute*minuteSeconds-second) * time.Second)
+	next := t.Add(time.Duration(3600-minute*60-second) * time.Second)
 	if _, end := t.ZoneBounds(); end.After(t) && end.Before(next) {
 		return end
 	}
