@@ -78,7 +78,7 @@ WRAP:
 	// If it's this month, then do nothing.
 	for year, month := t.Year(), t.Month(); !s.monthMatch(t); {
 		month++
-		t = startOfDay(year, month, 1, loc)
+		t = startOfDay(year, month, 1, loc, t)
 		if t.Year() != year {
 			goto WRAP
 		}
@@ -87,7 +87,7 @@ WRAP:
 	// Now get a day in that month.
 	for year, month, day := t.Date(); !s.dayMatch(t); {
 		day++
-		t = startOfDay(year, month, day, loc)
+		t = startOfDay(year, month, day, loc, t)
 		if t.Month() != month {
 			goto WRAP
 		}
@@ -120,7 +120,7 @@ WRAP:
 // startOfDay returns the first instant of a day in loc, normalized like
 // time.Date: midnight, or the clock change skipping it, which starts the next
 // day if the whole day is skipped.
-func startOfDay(year int, month time.Month, day int, loc *time.Location) time.Time {
+func startOfDay(year int, month time.Month, day int, loc *time.Location, notBefore time.Time) time.Time {
 	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
 	_, offset := t.Zone()
 	midnight := time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Unix()
@@ -129,8 +129,35 @@ func startOfDay(year int, month time.Month, day int, loc *time.Location) time.Ti
 	switch wall := t.Unix() + int64(offset); {
 	case wall < midnight:
 		_, t = t.ZoneBounds()
+		return t
 	case wall > midnight:
 		t, _ = t.ZoneBounds()
+		return t
+	}
+	// Midnight can occur twice when the clock is set back across it, and
+	// time.Date returns either occurrence: take the first one not before
+	// notBefore.
+	start, end := t.ZoneBounds()
+	if !start.IsZero() {
+		// detect if change earlier than `t` midnight occurence did set back clock
+		if _, prev := start.Add(-time.Second).Zone(); prev > offset {
+			// enough back to move midnight before start => `t` is 2nd occurence
+			if earlier := t.Add(time.Duration(offset-prev) * time.Second); earlier.Before(start) && !earlier.Before(notBefore) {
+				// return 1st occurence if not past notBefore
+				return earlier
+			}
+		}
+	}
+	if !end.IsZero() && t.Before(notBefore) {
+		// `t` is before notBefore and is assumed to be 1st midnight occurrence
+		// detect if change later than 1st midnight occurence would set back clock
+		if _, next := end.Zone(); next < offset {
+			// enough back to move midnight before end => `t` is indeed first occurence
+			if later := t.Add(time.Duration(offset-next) * time.Second); !later.Before(end) {
+				// return 2nd occurence
+				return later
+			}
+		}
 	}
 	return t
 }

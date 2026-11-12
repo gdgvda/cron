@@ -210,6 +210,9 @@ func TestNext(t *testing.T) {
 		{"2011-12-29T12:00:00-1000", "TZ=Pacific/Apia 0 0 12 * * ?", "2011-12-31T12:00:00+1400"},
 		{"2011-12-01T00:00:00-1000", "TZ=Pacific/Apia 0 0 12 30 12 ?", "2012-12-30T12:00:00+1400"},
 
+		// 00:01 -> 23:01
+		{"2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * * SUN", "2010-11-07T00:30:00-0400"},
+
 		// Last day of month
 		{"Tue Jan 2 23:35 2024", "0 0 0 L * *", "Wed Jan 31 00:00 2024"},
 		{"Fri Feb 2 23:35 2024", "0 0 0 L * *", "Thu Feb 29 00:00 2024"},
@@ -232,6 +235,39 @@ func TestNext(t *testing.T) {
 			expected := getTime(c.expected)
 			if !actual.Equal(expected) {
 				t.Fatalf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+			}
+		})
+	}
+}
+
+func TestDSTBackMidnightNoHang(t *testing.T) {
+	cases := []struct{ name, from, spec, want string }{
+		{"minute loop", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * * SUN", "2010-11-07T00:30:00-0400"},
+		{"hour loop", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 5 * * SUN", "2010-11-07T05:30:00-0400"},
+		{"midnight 1st", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-07T00:00:00-0300"},
+		{"midnight 2nd", "2010-11-07T00:00:00-0300", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-07T00:00:00-0400"},
+		{"midnight next", "2010-11-07T00:00:00-0400", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-14T00:00:00-0400"},
+		{"month loop", "2009-10-01T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * NOV *", "2009-11-01T00:30:00-0400"},
+		{"casey midnight 1st", "2010-03-01T00:00:00+1100", "TZ=Antarctica/Casey 0 0 0 5 * ?", "2010-03-05T00:00:00+1100"},
+		{"casey midnight 2nd", "2010-03-05T00:00:00+1100", "TZ=Antarctica/Casey 0 0 0 5 * ?", "2010-03-05T00:00:00+0800"},
+		{"casey 2nd 01:30", "2010-03-05T01:30:00+1100", "TZ=Antarctica/Casey 0 30 1 5 * ?", "2010-03-05T01:30:00+0800"},
+		{"casey 3h", "2010-03-01T00:00:00+1100", "TZ=Antarctica/Casey 0 30 1 5 * ?", "2010-03-05T01:30:00+1100"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sched, err := secondParser.Parse(c.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan time.Time, 1)
+			go func() { done <- sched.Next(getTime(c.from)) }()
+			select {
+			case got := <-done:
+				if want := getTime(c.want); !got.Equal(want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Errorf("HANG")
 			}
 		})
 	}
