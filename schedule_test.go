@@ -192,6 +192,27 @@ func TestNext(t *testing.T) {
 		{"2018-10-17T05:00:00-0400", "TZ=America/Sao_Paulo 0 0 9 10 * ?", "2018-11-10T06:00:00-0500"},
 		{"2018-02-14T05:00:00-0500", "TZ=America/Sao_Paulo 0 0 9 22 * ?", "2018-02-22T07:00:00-0500"},
 
+		// Midnight skipped on Friday, east of Greenwich: 0am EET (+2) -> 1am EEST (+3)
+		{"2026-04-23T05:00:00+0200", "TZ=Africa/Cairo 0 0 5 * * THU", "2026-04-30T05:00:00+0300"},
+		{"2026-04-23T05:00:00+0200", "TZ=Africa/Cairo 0 0 5 * * FRI", "2026-04-24T05:00:00+0300"},
+
+		// Midnight skipped on Sunday, west of Greenwich: 0am CST (-5) -> 1am CDT (-4)
+		{"2026-03-07T12:00:00-0500", "TZ=America/Havana 0 0 12 * * SAT", "2026-03-14T12:00:00-0400"},
+
+		// Half an hour: 2am (+1030) -> 2:30am (+11)
+		{"2026-10-04T00:00:00+1030", "TZ=Australia/Lord_Howe 0 0 0 * * ?", "2026-10-05T00:00:00+1100"},
+
+		// Not on the hour: 2:45am (+1245) -> 3:45am (+1345), and back
+		{"2026-09-27T00:00:00+1245", "TZ=Pacific/Chatham 0 50 3 * * ?", "2026-09-27T03:50:00+1345"},
+		{"2026-04-05T02:50:00+1345", "TZ=Pacific/Chatham 0 50 2 * * ?", "2026-04-05T02:50:00+1245"},
+
+		// December 30th skipped: midnight (-10) -> midnight on the 31st (+14)
+		{"2011-12-29T12:00:00-1000", "TZ=Pacific/Apia 0 0 12 * * ?", "2011-12-31T12:00:00+1400"},
+		{"2011-12-01T00:00:00-1000", "TZ=Pacific/Apia 0 0 12 30 12 ?", "2012-12-30T12:00:00+1400"},
+
+		// 00:01 -> 23:01
+		{"2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * * SUN", "2010-11-07T00:30:00-0400"},
+
 		// Last day of month
 		{"Tue Jan 2 23:35 2024", "0 0 0 L * *", "Wed Jan 31 00:00 2024"},
 		{"Fri Feb 2 23:35 2024", "0 0 0 L * *", "Thu Feb 29 00:00 2024"},
@@ -214,6 +235,39 @@ func TestNext(t *testing.T) {
 			expected := getTime(c.expected)
 			if !actual.Equal(expected) {
 				t.Fatalf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+			}
+		})
+	}
+}
+
+func TestDSTBackMidnightNoHang(t *testing.T) {
+	cases := []struct{ name, from, spec, want string }{
+		{"minute loop", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * * SUN", "2010-11-07T00:30:00-0400"},
+		{"hour loop", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 30 5 * * SUN", "2010-11-07T05:30:00-0400"},
+		{"midnight 1st", "2010-11-05T00:00:00-0300", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-07T00:00:00-0300"},
+		{"midnight 2nd", "2010-11-07T00:00:00-0300", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-07T00:00:00-0400"},
+		{"midnight next", "2010-11-07T00:00:00-0400", "TZ=America/Goose_Bay 0 0 0 * * SUN", "2010-11-14T00:00:00-0400"},
+		{"month loop", "2009-10-01T00:00:00-0300", "TZ=America/Goose_Bay 0 30 0 * NOV *", "2009-11-01T00:30:00-0400"},
+		{"casey midnight 1st", "2010-03-01T00:00:00+1100", "TZ=Antarctica/Casey 0 0 0 5 * ?", "2010-03-05T00:00:00+1100"},
+		{"casey midnight 2nd", "2010-03-05T00:00:00+1100", "TZ=Antarctica/Casey 0 0 0 5 * ?", "2010-03-05T00:00:00+0800"},
+		{"casey 2nd 01:30", "2010-03-05T01:30:00+1100", "TZ=Antarctica/Casey 0 30 1 5 * ?", "2010-03-05T01:30:00+0800"},
+		{"casey 3h", "2010-03-01T00:00:00+1100", "TZ=Antarctica/Casey 0 30 1 5 * ?", "2010-03-05T01:30:00+1100"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sched, err := secondParser.Parse(c.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan time.Time, 1)
+			go func() { done <- sched.Next(getTime(c.from)) }()
+			select {
+			case got := <-done:
+				if want := getTime(c.want); !got.Equal(want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Errorf("HANG")
 			}
 		})
 	}
@@ -311,6 +365,124 @@ func getTimeTZ(value string) time.Time {
 	}
 
 	return t
+}
+
+// TestNextClockChanges checks Next over a day on either side of each clock
+// change of a year against a walk over every minute, activating at each
+// instant whose local time matches the schedule: twice in repeated hours and
+// never in skipped ones.
+func TestNextClockChanges(t *testing.T) {
+	locations := []struct {
+		name string
+		year int
+	}{
+		{"America/New_York", 2026},
+		{"Europe/Paris", 2026},
+		{"Australia/Sydney", 2026},
+		// By half an hour.
+		{"Australia/Lord_Howe", 2026},
+		// At 2:45 and 3:45.
+		{"Pacific/Chatham", 2026},
+		// At midnight, east and west of Greenwich.
+		{"Africa/Cairo", 2026},
+		{"Asia/Tehran", 2021},
+		{"America/Havana", 2026},
+		{"America/Santiago", 2026},
+		{"America/Sao_Paulo", 2018},
+		// Twice in a row during Ramadan.
+		{"Africa/Casablanca", 2026},
+		// Skipping December 30th.
+		{"Pacific/Apia", 2011},
+	}
+	specs := []string{
+		"0 * * * * *", "*/20 * 0-3 * * *", "0 0 * * * *", "0 30 * * * *",
+		"0 0 0 * * *", "0 15 0 * * *", "0 0,30 0-3 * * *", "0 45 1,2 * * *",
+		"0 50 2,3 * * *", "0 0 23 * * *", "0 30 23 * * *", "59 59 23 * * *",
+		"0 0 5 * * THU", "0 0 5 * * FRI", "0 0 12 * * SAT", "0 0 0 * * SUN",
+		"0 0 12 30 * *", "0 0 12 31 * *",
+	}
+	for _, l := range locations {
+		loc, err := time.LoadLocation(l.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		changes := offsetChanges(loc, time.Date(l.year, time.January, 1, 0, 0, 0, 0, loc), time.Date(l.year+1, time.January, 1, 0, 0, 0, 0, loc))
+		if len(changes) == 0 {
+			t.Fatalf("%s: no clock change in %d", l.name, l.year)
+		}
+		for _, spec := range specs {
+			sched, err := secondParser.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sched = sched.WithLocation(loc)
+			for _, change := range changes {
+				from, to := change.Add(-24*time.Hour), change.Add(24*time.Hour)
+				expected := activationsBetween(sched, from, to)
+				var actual []time.Time
+				for next := sched.Next(from.Add(-time.Second)); next.Before(to); next = sched.Next(next) {
+					actual = append(actual, next)
+				}
+				if i := firstDifference(expected, actual); i >= 0 {
+					t.Errorf("%s %s, around %v: activation %d: (expected) %v != %v (actual)",
+						l.name, spec, change.In(loc), i, at(expected, i), at(actual, i))
+				}
+			}
+		}
+	}
+}
+
+// offsetChanges returns the instants between from and to at which the UTC
+// offset of loc changes.
+func offsetChanges(loc *time.Location, from, to time.Time) []time.Time {
+	var changes []time.Time
+	for t := from.In(loc); ; {
+		_, end := t.ZoneBounds()
+		if end.IsZero() || !end.Before(to) {
+			return changes
+		}
+		_, before := t.Zone()
+		if _, after := end.Zone(); after != before {
+			changes = append(changes, end)
+		}
+		t = end
+	}
+}
+
+// activationsBetween returns the activations of s from from, included, to to,
+// excluded, by checking the local time of every minute, from aligned to a
+// minute.
+func activationsBetween(s *DefaultSchedule, from, to time.Time) []time.Time {
+	var activations []time.Time
+	for u := from.In(s.location); u.Before(to); u = u.Add(time.Minute) {
+		if !s.monthMatch(u) || !s.dayMatch(u) || !s.hourMatch(u) || !s.minuteMatch(u) {
+			continue
+		}
+		for second := 0; second < 60; second++ {
+			if v := u.Add(time.Duration(second) * time.Second); s.secondMatch(v) {
+				activations = append(activations, v)
+			}
+		}
+	}
+	return activations
+}
+
+// firstDifference returns the index of the first difference between a and b,
+// or -1 if they are equal.
+func firstDifference(a, b []time.Time) int {
+	for i := 0; i < max(len(a), len(b)); i++ {
+		if i >= len(a) || i >= len(b) || !a[i].Equal(b[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func at(times []time.Time, i int) any {
+	if i < len(times) {
+		return times[i]
+	}
+	return "none"
 }
 
 // https://github.com/robfig/cron/issues/144
