@@ -147,14 +147,7 @@ func (p *DefaultParser) Parse(spec string) (*DefaultSchedule, error) {
 		return nil, err
 	}
 
-	return &DefaultSchedule{
-		secondMatch: second,
-		minuteMatch: minute,
-		hourMatch:   hour,
-		dayMatch:    day,
-		monthMatch:  month,
-		location:    loc,
-	}, nil
+	return newDefaultSchedule(second, minute, hour, day, month, loc), nil
 }
 
 // normalizeFields takes a subset set of the time fields and returns the full set
@@ -271,14 +264,7 @@ func create(second, minute, hour, dom, month, dow string, location *time.Locatio
 	if err != nil {
 		return nil, err
 	}
-	return &DefaultSchedule{
-		secondMatch: secondMatch,
-		minuteMatch: minuteMatch,
-		hourMatch:   hourMatch,
-		dayMatch:    dayMatch,
-		monthMatch:  monthMatch,
-		location:    location,
-	}, nil
+	return newDefaultSchedule(secondMatch, minuteMatch, hourMatch, dayMatch, monthMatch, location), nil
 }
 
 // every returns a crontab Schedule that activates once every duration.
